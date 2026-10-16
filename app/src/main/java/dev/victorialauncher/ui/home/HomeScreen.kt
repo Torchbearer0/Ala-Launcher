@@ -113,6 +113,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.media.NotificationEntry
 import dev.victorialauncher.data.EdgeSide
 import dev.victorialauncher.data.ShortcutSwipe
 import dev.victorialauncher.data.EntryKind
@@ -128,6 +129,7 @@ import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.HapticUtil
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.victorialauncher.ui.common.AppIcon
+import dev.victorialauncher.ui.common.NotificationPreviewLine
 import dev.victorialauncher.ui.common.swipeForShortcuts
 import dev.victorialauncher.ui.common.AppPanel
 import dev.victorialauncher.ui.common.AppShortcutMenu
@@ -211,6 +213,7 @@ fun HomeScreen(
     /** Whether a sideways swipe on a row offers its app's shortcuts. */
     shortcutSwipe: ShortcutSwipe,
     favorites: List<FavoriteEntry>,
+    notificationPreviewByPackage: Map<String, NotificationEntry> = emptyMap(),
     nameOverrides: Map<String, String>,
     iconSizeDp: Int,
     labelSizeSp: Int,
@@ -1058,6 +1061,7 @@ fun HomeScreen(
                             shortcutSwipe = shortcutSwipe,
                             app = item.app,
                             label = displayName(item.app),
+notification = notificationPreviewByPackage[item.app.componentName.packageName],
                             editMode = editMode,
                             dragHandle = dragHandle,
                             iconSizeDp = iconSizeDp,
@@ -1304,6 +1308,7 @@ private fun FavoriteRow(
     shortcutSwipe: ShortcutSwipe,
     app: AppInfo,
     label: String,
+    notification: NotificationEntry? = null,
     editMode: Boolean,
     /** Non-null in edit mode: the gesture that reorders, attached to this row's grab handle. */
     dragHandle: Modifier?,
@@ -1407,16 +1412,28 @@ private fun FavoriteRow(
                 iconWidth = iconSizeDp.dp,
                 icon = { AppIcon(app = app, sizeDp = iconSizeDp) },
             ) { labelModifier ->
-                Text(
-                    label,
-                    // Same dimming a hidden app gets in the A-Z list: a shortcut its
-                    // publisher has switched off is still listed, but tapping it only
-                    // explains why it will not open.
-                    color = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor,
-                    fontSize = labelSizeSp.sp,
-                    modifier = labelModifier,
-                    textAlign = alignment.textAlign(),
-                )
+                // The label stays on its own line; a notification, when there is one,
+                // goes underneath it rather than beside it, so neither crowds the other.
+                Column(modifier = labelModifier) {
+                    Text(
+                        label,
+                        // Same dimming a hidden app gets in the A-Z list: a shortcut its
+                        // publisher has switched off is still listed, but tapping it only
+                        // explains why it will not open.
+                        color = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor,
+                        fontSize = labelSizeSp.sp,
+                        textAlign = alignment.textAlign(),
+                    )
+                    val preview = notification
+                    if (preview != null) {
+                        NotificationPreviewLine(
+                            entry = preview,
+                            contentColor = contentColor,
+                            fontSize = (labelSizeSp - 2).coerceAtLeast(8).sp,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
         }
 

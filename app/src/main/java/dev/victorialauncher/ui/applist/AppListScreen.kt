@@ -119,6 +119,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.media.NotificationEntry
 import dev.victorialauncher.data.EdgeSide
 import dev.victorialauncher.data.Folder
 import dev.victorialauncher.ui.home.FolderIcon
@@ -132,6 +133,7 @@ import dev.victorialauncher.ui.common.swipeForShortcuts
 import dev.victorialauncher.ui.common.LocalIconConfig
 import dev.victorialauncher.ui.common.recordTouchPosition
 import dev.victorialauncher.ui.common.EditAppDialog
+import dev.victorialauncher.ui.common.NotificationPreviewLine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.dropWhile
@@ -229,6 +231,8 @@ fun AppListScreen(
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
     contentColor: Color,
+    /** Latest notification per posting package, for the preview line under each row. */
+    notificationPreviewByPackage: Map<String, NotificationEntry> = emptyMap(),
     showAlphabet: Boolean,
     edgeSide: EdgeSide,
     /** Hoisted so a swipe that overshoots the opening animation can keep scrolling it. */
@@ -1287,6 +1291,7 @@ fun AppListScreen(
                         iconSide = iconSide,
                         app = row.app,
                         label = displayName(row.app),
+notification = notificationPreviewByPackage[row.app.componentName.packageName],
                         iconSizeDp = iconSizeDp,
                         labelSizeSp = labelSizeSp,
                         isFavorite = favoriteKeys.contains(row.app.key),
@@ -1558,6 +1563,7 @@ private fun AppRow(
     touchPosition: MutableState<Offset>,
     app: AppInfo,
     label: String,
+    notification: NotificationEntry? = null,
     iconSizeDp: Int,
     labelSizeSp: Int,
     isFavorite: Boolean,
@@ -1625,21 +1631,32 @@ private fun AppRow(
             // beside it; a plain weight spans the row and pins the icon to the far edge.
             val labelModifier = Modifier.weight(1f, fill = false)
             val text: @Composable () -> Unit = {
-                Text(
-                    label,
-                    // Dimmed, because a hidden app only ever turns up here through a search
-                    // and nothing else on the row says it is one. A shortcut its publisher
-                    // has switched off gets the same treatment, for the same reason: it is
-                    // listed, but tapping it only explains why it will not open.
-                    color = if (isHidden || app.disabled) contentColor.copy(alpha = 0.5f) else contentColor,
-                    fontSize = labelSizeSp.sp,
-                    modifier = labelModifier,
-                    textAlign = when (alignment) {
-                        HomeAlignment.LEFT -> TextAlign.Start
-                        HomeAlignment.CENTER -> TextAlign.Center
-                        HomeAlignment.RIGHT -> TextAlign.End
-                    },
-                )
+                // Two lines when the app has a notification: its name above, then the
+                // preview the notification left behind, so the same row reads as both.
+                Column(modifier = labelModifier) {
+                    Text(
+                        label,
+                        // Dimmed, because a hidden app only ever turns up here through a search
+                        // and nothing else on the row says it is one. A shortcut its publisher
+                        // has switched off gets the same treatment, for the same reason: it is
+                        // listed, but tapping it only explains why it will not open.
+                        color = if (isHidden || app.disabled) contentColor.copy(alpha = 0.5f) else contentColor,
+                        fontSize = labelSizeSp.sp,
+                        textAlign = when (alignment) {
+                            HomeAlignment.LEFT -> TextAlign.Start
+                            HomeAlignment.CENTER -> TextAlign.Center
+                            HomeAlignment.RIGHT -> TextAlign.End
+                        },
+                    )
+                    val preview = notification
+                    if (preview != null) {
+                        NotificationPreviewLine(
+                            entry = preview,
+                            contentColor = contentColor,
+                            fontSize = (labelSizeSp - 2).coerceAtLeast(8).sp,
+                        )
+                    }
+                }
             }
             // Centerd rows balance the icon with a spacer on the label's far side, so the
             // text lands on the screen's center line rather than the pair straddling it.

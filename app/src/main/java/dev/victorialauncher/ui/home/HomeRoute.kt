@@ -787,6 +787,12 @@ fun HomeRoute(
                 favoritesReorderable = settings.favoritesSource == FavoritesSource.MANUAL,
                 shortcutSwipe = settings.shortcutSwipe,
                 favorites = favorites,
+                notificationPreviewByPackage = remember(notifications) {
+                    notifications.groupBy { it.packageName }
+                        .mapValues { (_, list) -> list.maxByOrNull { it.postTime } }
+                        .filterValues { it != null }
+                        .mapValues { it.value!! }
+                },
                 nameOverrides = nameOverrides,
                 iconSizeDp = settings.iconSizeDp,
                 labelSizeSp = settings.labelSizeSp,
@@ -1028,6 +1034,12 @@ fun HomeRoute(
                 onOpenSettings = { closeAppList(); onNavigate("settings") },
                 onDismiss = { closeAppList() },
                 contentColor = settings.contentColor,
+                notificationPreviewByPackage = remember(notifications) {
+                    notifications.groupBy { it.packageName }
+                        .mapValues { (_, list) -> list.maxByOrNull { it.postTime } }
+                        .filterValues { it != null }
+                        .mapValues { it.value!! }
+                },
                 hapticsEnabled = settings.hapticsEnabled,
                 showAlphabet = settings.showAlphabet,
                 edgeSide = settings.edgeSide,
