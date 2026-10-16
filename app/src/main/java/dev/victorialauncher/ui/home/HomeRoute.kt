@@ -438,7 +438,13 @@ fun HomeRoute(
     // above: otherwise a strip configured for the left would be sitting there, unscrubbed and
     // blocking BACK, for as long as the drawer stayed open.
     LaunchedEffect(settings.edgeSide, appListVisible) {
-        scrub.syncRestingSide(if (appListVisible) EdgeSide.RIGHT else settings.edgeSide)
+        if (appListVisible) {
+            // Forcing, not syncing: the swipe that opens the list may still have a finger down,
+            // and syncRestingSide deliberately stands down mid-gesture.
+            scrub.forceRestingSide(EdgeSide.RIGHT)
+        } else {
+            scrub.syncRestingSide(settings.edgeSide)
+        }
     }
 
     // BACK on the home screen must do nothing whatsoever.
@@ -1001,6 +1007,7 @@ fun HomeRoute(
                 onOpenSettings = { closeAppList(); onNavigate("settings") },
                 onDismiss = { closeAppList() },
                 contentColor = settings.contentColor,
+                hapticsEnabled = settings.hapticsEnabled,
                 showAlphabet = settings.showAlphabet,
                 edgeSide = settings.edgeSide,
                 statusBarHidden = settings.hideStatusBarAppList,
@@ -1087,10 +1094,21 @@ fun HomeRoute(
         if (showIdleStripNow) {
             EdgeScrubber(
                 letters = listModel.letters,
-                scrubY = { null },
-                pullPx = { 0f },
+                // Reading the holder rather than reporting nothing, so the strip bows around a
+                // fingertip that lands on it here exactly as it does in the drawer.
+                scrubY = { scrub.currentY() },
+                pullPx = { scrub.currentPull() },
                 band = band,
                 side = scrub.side,
+                // Tappable here too: pointing at an M on the home screen is the same intention
+                // as pointing at one in the drawer, and should land in the same place.
+                state = scrub,
+                listOpen = false,
+                onOpen = {
+                    appListVisible = true
+                    scope.launch { openAnim.snapTo(openDistancePx) }
+                },
+                hapticsEnabled = settings.hapticsEnabled,
                 // Just off the edge on the home screen. Not flush: right against the bezel the
                 // letters sit under the system's own edge inset and read as clipped, and the
                 // couple of dp of daylight keeps them off the curve of the screen.
@@ -1217,9 +1235,9 @@ fun HomeRoute(
                     panelFor = null
                     launchEntry(panelApp)
                 },
-                onOpenWidgetPicker = {
+                onOpenWidgetPicker = { focusPackage ->
                     panelFor = null
-                    widgetActions.onAddWidget()
+                    widgetActions.onAddWidget(focusPackage)
                 },
             )
         }

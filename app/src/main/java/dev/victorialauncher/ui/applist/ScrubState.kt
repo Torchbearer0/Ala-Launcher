@@ -92,6 +92,20 @@ class ScrubState {
         if (!active) side = if (edgeSide == EdgeSide.LEFT) EdgeSide.LEFT else EdgeSide.RIGHT
     }
 
+    /**
+     * Parks the strip on [edgeSide] even mid-gesture.
+     *
+     * Separate from [syncRestingSide] because the case that matters is the one it refuses: a
+     * swipe that starts on one edge and opens the list has the finger down when the list
+     * appears, so the usual rule stands the strip on the edge it was left on. That edge is
+     * then sitting over the system BACK gesture with nothing left to do about it until the
+     * finger lifts. Whoever is asking here is asking because the list has already opened, and
+     * that has to win.
+     */
+    fun forceRestingSide(edgeSide: EdgeSide) {
+        side = edgeSide
+    }
+
     fun begin(side: EdgeSide) {
         this.side = side
         active = true
@@ -149,6 +163,24 @@ class ScrubState {
                 stiffness = Spring.StiffnessMedium,
             ),
         )
+        releasing = false
+        pull = 0f
+    }
+
+    /**
+     * Ends a touch without the spring, and keeps the placement.
+     *
+     * Separate from [cancel], which forgets the placement too, and from [release], which is
+     * suspended on an animation. The strip is drawn by a composable that can leave composition
+     * the moment the drawer opens — cancelling the coroutine that was going to run the release —
+     * and the strip was then left showing the letter it had been parked on, frozen until
+     * something else touched it. Clearing the live fields is not worth a frame of animation.
+     */
+    fun stop() {
+        holdScrolling = false
+        active = false
+        scrubbing = false
+        letter = null
         releasing = false
         pull = 0f
     }

@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import dev.victorialauncher.media.NowPlayingListenerService
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -44,6 +45,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -149,6 +151,9 @@ fun NotificationPanel(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 26.dp),
                 )
             } else {
+                // Read once: the fallback below runs inside a plain callback, where
+                // LocalContext cannot be read.
+                val panelContext = LocalContext.current
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 1400.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 14.dp),
@@ -167,10 +172,23 @@ fun NotificationPanel(
                                 entry = entry,
                                 onDismiss = { onDismissEntry(entry.key) },
                                 onPerformAction = onPerformAction,
-                                // The header above already opens this app, so the body doing it
-                                // too is what makes a notification readable as a thing to tap.
-                                onOpen = appsByPackage[entry.packageName]?.let { app ->
-                                    { onOpenApp(app) }
+                                // Always tappable, and it sends what the app asked the tap to run —
+                                // which is the particular screen, not just the app's front page.
+                                // Keyed off appsByPackage this only worked for apps already
+                                // pinned, so every notification from an app the user had not
+                                // favourited was a row that ignored the finger.
+                                onOpen = {
+                                    NowPlayingListenerService.open(entry.contentIntent) {
+                                        // No intent, or one that would not fire. The app itself
+                                        // is the best answer available rather than nothing.
+                                        panelContext.packageManager
+                                            .getLaunchIntentForPackage(entry.packageName)
+                                            ?.let { launch ->
+                                                panelContext.startActivity(
+                                                    launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                                )
+                                            }
+                                    }
                                 },
                             )
                         }

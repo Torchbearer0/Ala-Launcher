@@ -96,7 +96,7 @@ fun AppPanel(
     leftDp: Dp,
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit,
-    onOpenWidgetPicker: () -> Unit,
+    onOpenWidgetPicker: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val victoriaApp = context.applicationContext as VictoriaApp
@@ -211,9 +211,13 @@ fun AppPanel(
                                     action.intent, action.remoteInputs, text,
                                 )
                             },
-                            // Already inside this app's own panel, so the body does not open the
-                            // app: that is what the header is for.
-                            onOpen = null,
+                            // Sends what the app asked the tap to run, so a message opens the
+                            // chat it arrived in rather than the app's front page — which is
+                            // what onOpenApp alone did, and what made every notification here
+                            // feel like it had ignored what it was about.
+                            onOpen = {
+                                NowPlayingListenerService.open(entry.contentIntent) { onOpenApp() }
+                            },
                         )
                     }
                 }
@@ -262,7 +266,7 @@ fun AppPanel(
                             // The existing picker owns allocating an id and running whatever
                             // configuration the provider asks for, which is the part that is
                             // easy to get wrong.
-                            onClick = { onOpenWidgetPicker() },
+                            onClick = { onOpenWidgetPicker(packageName) },
                         )
                     }
                 }

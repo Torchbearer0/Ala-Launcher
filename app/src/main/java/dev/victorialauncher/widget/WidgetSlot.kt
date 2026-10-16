@@ -59,7 +59,7 @@ import androidx.compose.ui.res.stringResource
 private const val DOTS_LINGER_MS = 1200L
 
 data class WidgetSlotActions(
-    val onAddWidget: () -> Unit,
+    val onAddWidget: (String?) -> Unit,
     val onRemoveWidget: (widgetId: Int) -> Unit,
     val onWidgetSettings: (widgetId: Int) -> Unit,
     val onAppInfo: (widgetId: Int) -> Unit,
@@ -103,7 +103,7 @@ fun WidgetSlot(
                     .padding(8.dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
-                            onTap = { actions.onAddWidget() },
+                            onTap = { actions.onAddWidget(null) },
                             onLongPress = { offset -> openMenu(-1, offset.x, offset.y) },
                         )
                     },
@@ -199,7 +199,7 @@ fun WidgetSlot(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.widget_add_another)) },
                     leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    onClick = { menuExpanded = false; actions.onAddWidget() },
+                    onClick = { menuExpanded = false; actions.onAddWidget(null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.widget_remove_this)) },
@@ -210,7 +210,7 @@ fun WidgetSlot(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.widget_add)) },
                     leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    onClick = { menuExpanded = false; actions.onAddWidget() },
+                    onClick = { menuExpanded = false; actions.onAddWidget(null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.action_edit_layout)) },

@@ -37,7 +37,11 @@ import androidx.compose.ui.res.stringResource
 
 private const val REQUEST_CONFIGURE = 1
 
+/** Package the caller wants at the top of the list, when it came from one app's panel. */
+const val EXTRA_FOCUS_PACKAGE = "dev.victorialauncher.FOCUS_PACKAGE"
+
 class WidgetPickerActivity : ComponentActivity() {
+
 
     private lateinit var appWidgetManager: AppWidgetManager
     private lateinit var widgetHost: VictoriaAppWidgetHost
@@ -62,7 +66,12 @@ class WidgetPickerActivity : ComponentActivity() {
         setContent {
             VictoriaTheme {
                 val providers = remember { appWidgetManager.installedProviders }
-                val groups = remember(providers) {
+                // Set when the picker was opened from one app's panel, which already knew
+                // which widgets that app offers. Without it every row led to the same
+                // undifferentiated catalogue, so a list that had been filtered correctly a
+                // moment earlier arrived somewhere the filtering had been thrown away.
+                val focusPackage = remember { intent?.getStringExtra(EXTRA_FOCUS_PACKAGE) }
+                val groups = remember(providers, focusPackage) {
                     providers.groupBy { it.provider.packageName }
                         .map { (pkg, widgets) ->
                             val appInfo = runCatching { packageManager.getApplicationInfo(pkg, 0) }.getOrNull()
@@ -73,6 +82,12 @@ class WidgetPickerActivity : ComponentActivity() {
                             )
                         }
                         .sortedBy { it.label.lowercase() }
+                        // Alphabetical, unless this was opened for one app — then that app
+                        // goes first, which is less machinery than scrolling a LazyColumn to
+                        // an index that has to be worked out and changes with the list.
+                        .let { if (focusPackage != null) {
+                            it.sortedByDescending { group -> group.widgets.any { w -> w.provider.packageName == focusPackage } }
+                        } else it }
                 }
 
                 Surface(modifier = Modifier.fillMaxSize()) {

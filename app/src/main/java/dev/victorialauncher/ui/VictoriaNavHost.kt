@@ -79,6 +79,7 @@ import dev.victorialauncher.ui.settings.ManageFavoritesScreen
 import dev.victorialauncher.ui.settings.SettingsScreen
 import dev.victorialauncher.ui.theme.rememberContentColor
 import dev.victorialauncher.widget.ClockWidgetProvider
+import dev.victorialauncher.widget.EXTRA_FOCUS_PACKAGE
 import dev.victorialauncher.widget.WidgetPickerActivity
 import dev.victorialauncher.widget.WidgetSlotActions
 import kotlinx.coroutines.Dispatchers
@@ -603,7 +604,15 @@ fun VictoriaNavHost(
 
     val widgetActions = remember {
         WidgetSlotActions(
-            onAddWidget = { widgetPickerLauncher.launch(Intent(context, WidgetPickerActivity::class.java)) },
+            onAddWidget = { focus ->
+                // Carries which app asked, so the picker can put that app's widgets at the top
+                // rather than opening on the whole device catalogue every time.
+                widgetPickerLauncher.launch(
+                    Intent(context, WidgetPickerActivity::class.java).apply {
+                        if (focus != null) putExtra(EXTRA_FOCUS_PACKAGE, focus)
+                    },
+                )
+            },
             onRemoveWidget = { id ->
                 scope.launch {
                     // Releasing the host id matters: left allocated, its provider keeps

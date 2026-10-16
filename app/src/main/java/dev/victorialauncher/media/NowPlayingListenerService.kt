@@ -2,6 +2,9 @@
 package dev.victorialauncher.media
 
 import android.app.Notification
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.content.ComponentName
 import android.content.Intent
 import android.content.Context
@@ -69,6 +72,32 @@ class NowPlayingListenerService : NotificationListenerService() {
          */
         fun dismiss(key: String) {
             runCatching { bound?.cancelNotification(key) }
+        }
+
+        /**
+         * Taps the body of a notification: sends the intent the posting app asked that tap to
+         * run, which is the screen the app meant to be on rather than merely its front page.
+         *
+         * Off the main thread for the same reason [performAction] is — the sending app runs its
+         * own code in it, and a slow one would be a dropped frame here.
+         */
+        fun open(intent: PendingIntent?, onFallback: () -> Unit) {
+            // A HandlerThread rather than a bare Thread, and that is the whole fix.
+            // PendingIntent.send() is a synchronous binder call: with no Looper on the thread
+            // it blocks and never returns, so the line after it was never reached, the
+            // fallback never ran, and a tap did nothing at all — with no error to show for
+            // it. Nothing here threw; the thread was simply still waiting.
+            val worker = HandlerThread("victoria-notification-open")
+            worker.start()
+            Handler(worker.looper).post {
+                val sent = intent != null && runCatching { intent.send() }
+                    .onFailure { Log.w(TAG, "notification content intent would not send", it) }
+                    .isSuccess
+                if (!sent) {
+                    Handler(Looper.getMainLooper()).post(onFallback)
+                }
+                worker.quitSafely()
+            }
         }
 
         /**
@@ -259,6 +288,7 @@ class NowPlayingListenerService : NotificationListenerService() {
             ongoing = isOngoing,
             clearable = isClearable,
             isGroupSummary = isSummary,
+                        contentIntent = notification.contentIntent,
             actions = readActions(notification),
         )
     }

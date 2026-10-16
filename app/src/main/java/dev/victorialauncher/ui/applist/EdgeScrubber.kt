@@ -3,16 +3,27 @@ package dev.victorialauncher.ui.applist
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.victorialauncher.service.HapticUtil
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +54,8 @@ private const val LETTER_HALF_DP = 10f
  * Derived rather than written down twice: the bubble sat at a number of its own, so growing
  * the bulge to clear a fingertip walked the strip straight into it.
  */
+private const val LETTER_TOUCH_WIDTH_DP = 26f
+
 const val SCRUB_BUBBLE_INSET_DP = EDGE_INSET_DP + BELL_AMPLITUDE_DP + LETTER_HALF_DP + 18f
 
 /**
@@ -69,14 +82,28 @@ fun EdgeScrubber(
      * being scrolled and the margin keeps them off whatever row happens to be underneath.
      */
     edgeInsetDp: Float = EDGE_INSET_DP,
+    /**
+     * The gesture holder. Null leaves the strip decorative, which is what the settings screen
+     * and any preview want — only the live strip should answer a finger.
+     */
+    state: ScrubState? = null,
+    /** Opens the list if a letter was tapped while it was closed. */
+    onOpen: (() -> Unit)? = null,
+    /** Whether the list was already up when the finger landed. Read through [rememberUpdatedState]. */
+    listOpen: Boolean = true,
+    hapticsEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     if (letters.isEmpty()) return
     val density = LocalDensity.current.density
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
     val spacingPx = band.heightPx / letters.size
     // Wide enough that a good stretch of the alphabet takes part in the curve.
     val sigmaPx = 2.6f * spacingPx
     val bellPx = BELL_AMPLITUDE_DP * density
+    val currentOpen by rememberUpdatedState(listOpen)
+    val currentOnOpen by rememberUpdatedState(onOpen)
 
     Box(
         modifier = modifier
@@ -87,6 +114,75 @@ fun EdgeScrubber(
             .fillMaxHeight()
             .padding(horizontal = edgeInsetDp.dp),
     ) {
+        // The letters themselves are the control. They used to be drawn and nothing more, so
+        // the only way to reach a letter was to start a drag at the screen edge and carry it
+        // across — a gesture for opening a list, not for choosing a letter in one.
+        //
+        // On its own Box rather than on the container, and only as tall as the band. The
+        // container is 210dp by the whole screen: putting the handler on it would make the
+        // strip swallow every tap down the right-hand side of the home screen, which is a
+        // great deal worse than a strip nobody could point at.
+        if (state != null) {
+            val holder = state
+            Box(
+                modifier = Modifier
+                    .align(if (side == EdgeSide.LEFT) Alignment.TopStart else Alignment.TopEnd)
+                    .offset { IntOffset(0, band.topPx.roundToInt()) }
+                    .width(LETTER_TOUCH_WIDTH_DP.dp)
+                    .height((band.heightPx / density).dp)
+                    .pointerInput(letters, band, side, holder) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            // Read before opening: a tap that opened the list must not then be
+                            // read as a tap on one that was already open.
+                            val openAtDown = currentOpen
+                            holder.begin(side)
+                            if (!openAtDown) currentOnOpen?.invoke()
+
+                            var lastIndex = -1
+                            var dragging = false
+                            // The box starts at the top of the band, so a local y has to be put
+                            // back into the space the geometry is written in before it means
+                            // anything. Getting this wrong reads every letter as A.
+                            fun report(localY: Float) {
+                                val y = localY + band.topPx
+                                val index = ScrubberGeometry.indexForY(
+                                    y, band.topPx, band.heightPx, letters.size,
+                                )
+                                if (index == lastIndex || index !in letters.indices) return
+                                lastIndex = index
+                                holder.update(y, 0f, letters[index])
+                                HapticUtil.tick(view, hapticsEnabled)
+                            }
+
+                            report(down.position.y)
+
+                            val pointer = down
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == pointer.id } ?: break
+                                if (!change.pressed) break
+                                if (change.positionChanged()) {
+                                    // Only a finger that has actually travelled counts as a
+                                    // scrub, so a plain tap does not spend a frame fading the
+                                    // rest of the list away and straight back in.
+                                    if (!dragging) {
+                                        dragging = true
+                                        holder.markScrubbing()
+                                    }
+                                    report(change.position.y)
+                                }
+                                change.consume()
+                            }
+                            // Not release(): that suspends on a spring in a scope this composable
+                            // owns, and opening the drawer takes the strip out of composition —
+                            // cancelling the very coroutine that was going to clear it.
+                            holder.stop()
+                        }
+                    },
+            )
+        }
         letters.forEachIndexed { index, c ->
             val centerY = ScrubberGeometry.letterCenterY(index, band.topPx, band.heightPx, letters.size)
 

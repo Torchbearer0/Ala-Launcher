@@ -254,6 +254,12 @@ fun AppListScreen(
     markWorkApps: Boolean,
     /** Width of the live edge zone, which rows have to clear whether or not letters show. */
     edgeZoneWidthDp: Int,
+    /**
+     * Whether touching a letter buzzes. Separate from the edge zone's own because the strip is
+     * touched deliberately, and someone who has turned haptics off should not get a tick for
+     * pointing at an M.
+     */
+    hapticsEnabled: Boolean,
     /** Whether the launcher's own text carries a shadow for legibility. */
     textShadow: Boolean,
     /** How strong that shadow is. */
@@ -1349,6 +1355,13 @@ fun AppListScreen(
                 pullPx = pullPx,
                 band = band,
                 side = activeSide,
+                // The letters are the control now: a tap parks the list at that letter and a
+                // drag walks it through. Reaching a letter used to mean starting a drag at the
+                // screen edge and carrying it across, which is a gesture for opening a list,
+                // not for choosing a letter in one.
+                state = scrub,
+                listOpen = true,
+                hapticsEnabled = hapticsEnabled,
                 modifier = Modifier.align(
                     if (activeSide == EdgeSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd
                 ),

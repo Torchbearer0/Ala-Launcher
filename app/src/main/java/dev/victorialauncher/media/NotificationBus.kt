@@ -79,6 +79,17 @@ data class NotificationEntry(
      * lists the same conversation twice.
      */
     val isGroupSummary: Boolean,
+    /**
+     * What a tap on the body is meant to run.
+     *
+     * Null for a notification that posted no intent, which is a real thing apps do. The body
+     * then falls back to opening the app, because a row that cannot be tapped at all is worse
+     * than one that opens the app rather than the exact screen the app had in mind.
+     *
+     * Held as a PendingIntent rather than anything read out of it, for the same reason the
+     * action buttons are: the system owns it, so it stays valid after the posting app is gone.
+     */
+    val contentIntent: PendingIntent? = null,
     /** The buttons this notification offers, in the order it offered them. */
     val actions: List<NotificationActionEntry> = emptyList(),
 )

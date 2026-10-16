@@ -1080,7 +1080,7 @@ fun HomeScreen(
                             onRemove = { menuForKey = null; onRemoveFavorite(item.app) },
                             onEditIconName = { menuForKey = null; renameDialogFor = item.app },
                             onOpenSettings = { menuForKey = null; onOpenSettings() },
-                            onAddWidget = { menuForKey = null; widgetActions.onAddWidget() },
+                            onAddWidget = { menuForKey = null; widgetActions.onAddWidget(null) },
                             onOpenPanel = onOpenPanel,
                         )
                     }
@@ -1248,7 +1248,7 @@ fun HomeScreen(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.widget_add)) },
                 leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                onClick = { backgroundMenu = false; widgetActions.onAddWidget() },
+                onClick = { backgroundMenu = false; widgetActions.onAddWidget(null) },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.home_choose_favorites)) },
@@ -1328,7 +1328,7 @@ private fun FavoriteRow(
     onEditIconName: () -> Unit,
     onOpenSettings: () -> Unit,
     /** Opens the widget picker, for the panel's widgets section. */
-    onAddWidget: () -> Unit,
+    onAddWidget: (String?) -> Unit,
     /**
      * Asks the screen to show the panel for this app: [topDp] is where it starts vertically
      * and [leftDp] where its own left edge sits.
