@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -87,6 +91,14 @@ fun EdgeTouchZone(
 ) {
     val view = LocalView.current
     val density = LocalDensity.current.density
+    // How wide the system says its own edge gestures are. A touch inside this is not ours to
+    // claim: BACK is recognised from the same stream this zone reads, and claiming a down
+    // there means the launcher silently wins a gesture the user meant for the system. Read
+    // rather than assumed, because the figure is the platform's and not ours to set.
+    val gestureBandPx = with(LocalDensity.current) {
+        WindowInsets.systemGestures.asPaddingValues().calculateLeftPadding(LayoutDirection.Ltr)
+            .roundToPx()
+    }
     val scope = rememberCoroutineScope()
     val fromLeft = side == EdgeSide.LEFT
     // The gesture handler outlives the composition that built it, so it must not close over
@@ -113,9 +125,21 @@ fun EdgeTouchZone(
                         .height((band.heightPx / density).dp)
                 }
             )
-            .pointerInput(letters, band, hapticsEnabled, fromLeft, bandOnly) {
+            .pointerInput(letters, band, hapticsEnabled, fromLeft, bandOnly, gestureBandPx) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // Standing down entirely inside the system's gesture insets, rather than
+                    // just not consuming. Half-claiming it is worse than either: the list would
+                    // open and the finger would still be on a gesture that could not finish,
+                    // and the strip would sit there waiting for a scrub that never happens.
+                    // Scrubbing from the very edge goes with it, which costs little now the
+                    // letters themselves can be tapped and dragged.
+                    val nearSystemEdge = if (fromLeft) {
+                        down.position.x < gestureBandPx
+                    } else {
+                        down.position.x > size.width - gestureBandPx
+                    }
+                    if (nearSystemEdge) return@awaitEachGesture
                     down.consume()
                     // Read before onOpen changes it: a tap that opened the list must not
                     // also be read as a tap on an open one.
