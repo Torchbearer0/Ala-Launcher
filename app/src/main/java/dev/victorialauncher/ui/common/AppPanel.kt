@@ -2,6 +2,7 @@
 package dev.victorialauncher.ui.common
 
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.pm.ShortcutInfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -28,7 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,6 +100,8 @@ fun AppPanel(
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit,
     onOpenWidgetPicker: (String) -> Unit,
+    /** Adds the chosen widget offered by an app without going through the full picker. */
+    onAddWidgetDirect: (AppWidgetProviderInfo) -> Unit,
 ) {
     val context = LocalContext.current
     val victoriaApp = context.applicationContext as VictoriaApp
@@ -111,23 +116,20 @@ fun AppPanel(
         all.filter { it.packageName == packageName && !it.isGroupSummary }
     }
 
-    var shortcuts by remember(app.key) { mutableStateOf<List<ShortcutInfo>>(emptyList()) }
-    var widgetLabels by remember(app.key) { mutableStateOf<List<String>>(emptyList()) }
 
+    var shortcuts by remember(app.key) { mutableStateOf<List<ShortcutInfo>>(emptyList()) }
+    var widgetProviders by remember(app.key) { mutableStateOf<List<AppWidgetProviderInfo>>(emptyList()) }
+    var pendingWidget by remember(app.key) { mutableStateOf<AppWidgetProviderInfo?>(null) }
     // Read once when the panel opens rather than as the list is drawn: shortcuts are a call
     // into the system per app, and the widgets are a query across every installed provider.
     LaunchedEffect(app.key) {
         val repo = victoriaApp.appRepository
         shortcuts = withContext(Dispatchers.IO) { repo.appShortcuts(app).take(MAX_SHORTCUTS) }
-        widgetLabels = withContext(Dispatchers.IO) {
+        widgetProviders = withContext(Dispatchers.IO) {
             runCatching {
                 AppWidgetManager.getInstance(context).installedProviders
                     .filter { it.provider.packageName == packageName }
-                    .map { info ->
-                        val label = info.label?.toString()
-                        if (label.isNullOrBlank()) info.provider.packageName else label
-                    }
-                    .distinct()
+                    .distinctBy { it.provider.flattenToString() }
                     .take(MAX_WIDGETS)
             }.getOrDefault(emptyList())
         }
@@ -246,14 +248,17 @@ fun AppPanel(
                     }
                 }
 
-                if (widgetLabels.isNotEmpty()) {
+                if (widgetProviders.isNotEmpty()) {
                     item(key = "label-widgets") {
                         PanelLabel(stringResource(R.string.app_panel_widgets))
                     }
-                    items(widgetLabels, key = { it }) { widgetLabel ->
+                    items(widgetProviders, key = { it.provider.flattenToString() }) { info ->
+                        val label = runCatching { info.loadLabel(context.packageManager) }
+                            .getOrNull()?.toString()?.takeIf { it.isNotBlank() }
+                            ?: info.provider.packageName
                         PanelRow(
-                            label = widgetLabel,
-                            icon = null,
+                            label = label,
+                            icon = runCatching { info.loadIcon(context, densityPx).toBitmap(ICON_PX, ICON_PX).asImageBitmap() }.getOrNull(),
                             labelSizeSp = labelSizeSp,
                             leading = {
                                 Icon(
@@ -263,15 +268,16 @@ fun AppPanel(
                                     modifier = Modifier.size(20.dp),
                                 )
                             },
-                            // The existing picker owns allocating an id and running whatever
-                            // configuration the provider asks for, which is the part that is
-                            // easy to get wrong.
-                            onClick = { onOpenWidgetPicker(packageName) },
+                            // Asks first rather than adding outright: a mis-tap here is easy
+                            // and the widget lands on the home screen, where taking it off is
+                            // a separate trip. Each row is one provider, so the confirmation
+                            // is also where the variant is chosen — no catalogue needed.
+                            onClick = { pendingWidget = info },
                         )
                     }
                 }
 
-                if (notifications.isEmpty() && shortcuts.isEmpty() && widgetLabels.isEmpty()) {
+                if (notifications.isEmpty() && shortcuts.isEmpty() && widgetProviders.isEmpty()) {
                     item(key = "empty") {
                         Text(
                             text = stringResource(R.string.app_panel_empty),
@@ -281,6 +287,32 @@ fun AppPanel(
                         )
                     }
                 }
+            }
+            pendingWidget?.let { info ->
+                AlertDialog(
+                    onDismissRequest = { pendingWidget = null },
+                    title = { Text(stringResource(R.string.widget_add), color = Color.White) },
+                    text = {
+                        Text(
+                            runCatching { info.loadLabel(context.packageManager) }
+                                .getOrNull()?.toString()?.takeIf { it.isNotBlank() }
+                                ?: info.provider.packageName,
+                            color = Color.White.copy(alpha = 0.75f),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            onAddWidgetDirect(info)
+                            pendingWidget = null
+                        }) { Text(stringResource(R.string.widget_add), color = Color.White) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingWidget = null }) {
+                            Text(stringResource(R.string.action_cancel), color = Color.White.copy(alpha = 0.75f))
+                        }
+                    },
+                    containerColor = Color.Black.copy(alpha = 0.32f),
+                )
             }
         }
     }

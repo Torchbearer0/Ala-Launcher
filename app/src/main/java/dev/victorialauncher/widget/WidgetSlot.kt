@@ -60,6 +60,8 @@ private const val DOTS_LINGER_MS = 1200L
 
 data class WidgetSlotActions(
     val onAddWidget: (String?) -> Unit,
+    /** Adds the chosen widget from an app without the picker. */
+    val onAddWidgetDirect: (AppWidgetProviderInfo) -> Unit = { onAddWidget(it.provider.packageName) },
     val onRemoveWidget: (widgetId: Int) -> Unit,
     val onWidgetSettings: (widgetId: Int) -> Unit,
     val onAppInfo: (widgetId: Int) -> Unit,

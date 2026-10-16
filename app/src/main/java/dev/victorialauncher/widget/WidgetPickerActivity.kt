@@ -40,6 +40,20 @@ private const val REQUEST_CONFIGURE = 1
 /** Package the caller wants at the top of the list, when it came from one app's panel. */
 const val EXTRA_FOCUS_PACKAGE = "dev.victorialauncher.FOCUS_PACKAGE"
 
+/**
+ * When set, the activity skips its list and adds a widget itself, finishing with the new id.
+ *
+ * The caller already decided which one: the app panel listed that app's providers and asked
+ * which to add, so making the user find the same row again in a full-screen catalogue was the
+ * step worth removing. Everything expensive still happens here rather than in the launcher UI —
+ * allocating the id, binding the provider (which can still raise the system's own bind
+ * confirmation), and running a configuration screen — because those need an activity to live in.
+ */
+const val EXTRA_DIRECT_ADD = "dev.victorialauncher.DIRECT_ADD"
+
+/** Optional specific provider to add in direct mode, as a flattened ComponentName. */
+const val EXTRA_WIDGET_PROVIDER = "dev.victorialauncher.WIDGET_PROVIDER"
+
 class WidgetPickerActivity : ComponentActivity() {
 
 
@@ -62,6 +76,27 @@ class WidgetPickerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         appWidgetManager = AppWidgetManager.getInstance(this)
         widgetHost = (application as VictoriaApp).widgetHost
+
+        // Direct add: the panel already knew which app's widget was wanted, so there is
+        // no list to show. Allocate, bind and configure here, then finish with the new id.
+        val directFocus = intent?.getStringExtra(EXTRA_FOCUS_PACKAGE)
+        val providerExtra = intent?.getStringExtra(EXTRA_WIDGET_PROVIDER)
+        val directAdd = intent?.getBooleanExtra(EXTRA_DIRECT_ADD, false) == true
+        if (directAdd && directFocus != null) {
+            val info = if (providerExtra != null) {
+                appWidgetManager.installedProviders.firstOrNull {
+                    it.provider.flattenToString() == providerExtra
+                }
+            } else {
+                appWidgetManager.installedProviders.firstOrNull {
+                    it.provider.packageName == directFocus
+                }
+            }
+            if (info != null) {
+                pick(info)
+                return
+            }
+        }
 
         setContent {
             VictoriaTheme {

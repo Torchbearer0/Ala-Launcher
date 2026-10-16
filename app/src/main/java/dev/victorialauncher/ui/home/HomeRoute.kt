@@ -86,6 +86,7 @@ import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.applist.AppListModel
 import dev.victorialauncher.ui.applist.AppListScreen
 import dev.victorialauncher.ui.applist.BandEditOverlay
+import android.appwidget.AppWidgetProviderInfo
 import dev.victorialauncher.ui.applist.EdgeScrubber
 import dev.victorialauncher.ui.applist.EdgeTouchZone
 import dev.victorialauncher.ui.applist.ScrubBand
@@ -1276,6 +1277,10 @@ fun HomeRoute(
                 onOpenWidgetPicker = { focusPackage ->
                     panelFor = null
                     widgetActions.onAddWidget(focusPackage)
+                },
+                onAddWidgetDirect = { info ->
+                    panelFor = null
+                    widgetActions.onAddWidgetDirect(info)
                 },
             )
         }

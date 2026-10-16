@@ -79,7 +79,9 @@ import dev.victorialauncher.ui.settings.ManageFavoritesScreen
 import dev.victorialauncher.ui.settings.SettingsScreen
 import dev.victorialauncher.ui.theme.rememberContentColor
 import dev.victorialauncher.widget.ClockWidgetProvider
+import dev.victorialauncher.widget.EXTRA_DIRECT_ADD
 import dev.victorialauncher.widget.EXTRA_FOCUS_PACKAGE
+import dev.victorialauncher.widget.EXTRA_WIDGET_PROVIDER
 import dev.victorialauncher.widget.WidgetPickerActivity
 import dev.victorialauncher.widget.WidgetSlotActions
 import kotlinx.coroutines.Dispatchers
@@ -610,6 +612,17 @@ fun VictoriaNavHost(
                 widgetPickerLauncher.launch(
                     Intent(context, WidgetPickerActivity::class.java).apply {
                         if (focus != null) putExtra(EXTRA_FOCUS_PACKAGE, focus)
+                    },
+                )
+            },
+            onAddWidgetDirect = { info ->
+                // No list: allocate the chosen widget and finish with it, so a panel row
+                // reads as "add" rather than "choose".
+                widgetPickerLauncher.launch(
+                    Intent(context, WidgetPickerActivity::class.java).apply {
+                        putExtra(EXTRA_FOCUS_PACKAGE, info.provider.packageName)
+                        putExtra(EXTRA_WIDGET_PROVIDER, info.provider.flattenToString())
+                        putExtra(EXTRA_DIRECT_ADD, true)
                     },
                 )
             },
