@@ -45,6 +45,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlin.math.roundToInt
@@ -53,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.lifecycle.Lifecycle
@@ -697,11 +699,29 @@ fun HomeRoute(
                     // Hidden, but still laid out: an AppWidgetHostView that is never placed
                     // loses its layout and comes back with its text collapsed.
                     if (appListVisible) {
-                        Modifier.pointerInput(Unit) {
+                        // The system says how wide its own gesture insets are, and those are
+                        // exactly the pixels BACK is recognised in. Asking beats guessing at 24dp,
+                        // which matches most devices by coincidence and would be too narrow on a
+                        // skin that widens the region — an app quietly eating the edge of the
+                        // gesture it was meant to be leaving alone.
+                        val density = LocalDensity.current
+                        val gesturePadding = WindowInsets.systemGestures.asPaddingValues()
+                        val backBandPx = with(density) {
+                            maxOf(
+                                gesturePadding.calculateLeftPadding(LayoutDirection.Ltr),
+                                gesturePadding.calculateRightPadding(LayoutDirection.Ltr),
+                            ).roundToPx()
+                        }
+                        Modifier.pointerInput(backBandPx) {
                             awaitEachGesture {
                                 while (true) {
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    event.changes.forEach { it.consume() }
+                                    val width = size.width
+                                    event.changes.forEach { change ->
+                                        val nearEdge = change.position.x < backBandPx ||
+                                            change.position.x > width - backBandPx
+                                        if (!nearEdge) change.consume()
+                                    }
                                     if (event.changes.none { it.pressed }) break
                                 }
                             }
