@@ -61,6 +61,14 @@ fun EdgeScrubber(
     pullPx: () -> Float,
     band: ScrubBand,
     side: EdgeSide,
+    /**
+     * How far in from the screen edge the letters sit.
+     *
+     * Zero on the home screen, so the strip is against the edge where the eye expects an edge
+     * to be. The drawer keeps the inset, because there the letters sit over a list that is
+     * being scrolled and the margin keeps them off whatever row happens to be underneath.
+     */
+    edgeInsetDp: Float = EDGE_INSET_DP,
     modifier: Modifier = Modifier,
 ) {
     if (letters.isEmpty()) return
@@ -77,7 +85,7 @@ fun EdgeScrubber(
             // go, and the bulge has since grown enough to clear a fingertip.
             .width(210.dp)
             .fillMaxHeight()
-            .padding(horizontal = EDGE_INSET_DP.dp),
+            .padding(horizontal = edgeInsetDp.dp),
     ) {
         letters.forEachIndexed { index, c ->
             val centerY = ScrubberGeometry.letterCenterY(index, band.topPx, band.heightPx, letters.size)
