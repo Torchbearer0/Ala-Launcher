@@ -5,6 +5,80 @@ minimal, list-based Android home screen.
 
 ![Victoria Launcher](docs/banner2.png)
 
+---
+
+## This repository is a fork
+
+Victoria Launcher was written by [adelmonte](https://github.com/adelmonte/victoria-launcher)
+and is used here under [GPL-3.0-or-later](LICENSE). The original commits, the original
+SPDX headers in every source file and the "forked from" attribution are all kept intact,
+so the history here reads as what it is: someone else's launcher, extended.
+
+Everything below the divider is upstream's own README. This section is the fork's.
+
+### What this fork adds
+
+**The app panel.** Swipe a home row in from the edge and it opens under that row: the
+app's notifications, its shortcuts, and its widgets, in one glass panel that follows the
+row you touched rather than dropping into a screen corner. Tapping a notification opens
+what the app asked it to open — the message, not just the app's front page.
+
+**The notification list.** A deep pull opens a full notification shade of our own:
+grouped by app, swipe to dismiss, clear one app or all, notification actions and inline
+reply where the notification offers them. Needs the notification listener permission,
+which the app asks for and will explain if it is missing.
+
+**Notification previews on app rows.** A row for an app with a notification shows the
+newest one under its label — sender, how long ago, the text, and a chevron. On both the
+home screen and in the A-Z drawer.
+
+**A real A-Z strip.** Tap a letter to jump, drag to scrub through the alphabet, on the
+home screen and in the drawer. Tap the edge to open the list and let go. The letters
+themselves are the touch target, so the strip does not sit there swallowing taps down the
+whole side of the screen.
+
+**One screen edge, several gestures.** An optional corner button with a different target
+for tap, hold and swipe-up. The edge zone that opens the drawer can sit on the left, the
+right or both, and can be confined to the vertical band the letters occupy so it stops
+taking touches meant for whatever shares that side.
+
+**Folders in the list.** Off by default: with them on, folders appear in the A-Z drawer
+next to the apps they contain.
+
+**System gestures that still work.** A launcher is a full-screen app that lives under the
+system's own gestures, and it is easy to swallow them by accident. Every gesture layer
+here yields inside `WindowInsets.systemGestures` on whichever edge it belongs to, and the
+drawer's nested scrolling leaves horizontal drags to the system. BACK works from the
+edges of the drawer, which is where you reach for it.
+
+**Menus that match the panel.** The long-press app menu and the notification panel are
+drawn in the same translucent glass as the app panel, and the home screen blurs behind
+the long-press menu so it stays readable on any wallpaper.
+
+**Adding a widget from the panel.** An app's widgets are listed in its own panel. Tapping
+one asks to confirm, names the variant you picked, and then adds that exact widget —
+without sending you through the full device catalogue to find the row you were already
+looking at.
+
+### Building this fork
+
+Same as upstream: JDK 17 and an Android SDK with platform 35.
+
+```sh
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+The notification features need the notification listener granted, and the permission
+cannot be set from `adb shell settings put` — it does not persist. Grant it from a shell
+on a connected device:
+
+```sh
+adb shell cmd notification allow_listener dev.victorialauncher/dev.victorialauncher.media.NowPlayingListenerService 0
+```
+
+---
+
 ## Install
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="70">](https://f-droid.org/packages/dev.victorialauncher/)
