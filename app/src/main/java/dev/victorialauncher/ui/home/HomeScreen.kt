@@ -10,12 +10,16 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +59,7 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
@@ -93,6 +98,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onSizeChanged
@@ -123,6 +129,7 @@ import dev.victorialauncher.service.HapticUtil
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.victorialauncher.ui.common.AppIcon
 import dev.victorialauncher.ui.common.swipeForShortcuts
+import dev.victorialauncher.ui.common.AppPanel
 import dev.victorialauncher.ui.common.AppShortcutMenu
 import dev.victorialauncher.ui.common.TouchAnchoredMenu
 import dev.victorialauncher.ui.common.LocalIconConfig
@@ -135,6 +142,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import dev.victorialauncher.R
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 
 private sealed interface HomeItem {
@@ -223,6 +231,12 @@ fun HomeScreen(
     onResizeNowPlaying: (Int) -> Unit,
     widgetActions: WidgetSlotActions,
     onLaunch: (AppInfo) -> Unit,
+    /**
+     * Opens the app's panel. Handed up rather than opened here: the panel is full-screen, the
+     * row is one line, and the A-Z strip is drawn by the destination above this screen — so
+     * anything drawn in either place ends up underneath or clipped.
+     */
+    onOpenPanel: (AppInfo, Dp, Dp) -> Unit,
     onRemoveFavorite: (AppInfo) -> Unit,
     onOpenFolderApp: (AppInfo) -> Unit,
     onRemoveFromFolder: (Folder, AppInfo) -> Unit,
@@ -265,6 +279,15 @@ fun HomeScreen(
     /** True when the corner opens the app list's search rather than launching anything. */
     cornerButtonIsSearch: Boolean,
     onOpenCornerSearch: () -> Unit,
+    /**
+     * What the same button does when held, and when swiped up; null leaves that gesture unbound.
+     *
+     * Null rather than falling back to the tap target: silently launching the tap's app on a hold
+     * would mean a gesture meant for something else opens the one thing already one tap away.
+     * Nothing is drawn for either, so unlike the tap there is no app needed here.
+     */
+    cornerLongPressAction: (() -> Unit)?,
+    cornerSwipeUpAction: (() -> Unit)?,
 ) {    // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
     val workSuffix = stringResource(R.string.app_work_suffix)
@@ -596,6 +619,9 @@ fun HomeScreen(
                         rawPullUp -= delta
                         onSwipeUpDrag(rawPullUp, -delta)
                     }
+                    // snapTo is suspend and this callback is not, so the launch is what lets it be called at
+                    // all — and only the last one survives, which is the intent: a frame's delta
+                    // should win over an earlier frame's, never both.
                     scope.launch {
                         val next = offsetY.value + delta
                         val outOfBounds = next > 0f || next < minOffset
@@ -677,13 +703,22 @@ fun HomeScreen(
                 // Sideways the camera cutout is down one edge rather than along the top, and
                 // it sat over the favorites. Only the horizontal sides are taken, so a phone
                 // held upright — where the cutout is above everything anyway — is unchanged.
-                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                // NOT taking the display-cutout inset horizontally. On a curved or waterfall screen the
+                // system reports an inset for the curve — 36dp a side on some phones — which is
+                // a "don't put anything important under here" hint, not a cutout. Adding it to
+                // the side padding put every row 56dp in on a setting saying 20, symmetrically,
+                // so left-aligned rows still looked centred and the setting appeared to do
+                // nothing. The side padding is the user's control and is the only inset here.
                 // A row of one short name stretched over a tablet is mostly empty space, and
                 // the A-Z strip ends up a hand's width from the names it is scrubbing. The cap
                 // only bites on a screen wider than a phone held upright, so nothing moves on
                 // one that is not.
                 .widthIn(max = MAX_CONTENT_WIDTH)
                 .align(alignment.wideScreenAlignment())
+                // Full width, deliberately. This column also holds the widget slot, Now
+                // Playing and the edit handles, and narrowing it to leave room for align to
+                // move squeezes every one of them — which is what broke adding and removing
+                // widgets. Alignment is a matter for the rows inside it, not this.
                 .fillMaxWidth()
                 .then(
                     // Edit mode roughly doubles the stack's height and its handles are
@@ -1045,6 +1080,8 @@ fun HomeScreen(
                             onRemove = { menuForKey = null; onRemoveFavorite(item.app) },
                             onEditIconName = { menuForKey = null; renameDialogFor = item.app },
                             onOpenSettings = { menuForKey = null; onOpenSettings() },
+                            onAddWidget = { menuForKey = null; widgetActions.onAddWidget() },
+                            onOpenPanel = onOpenPanel,
                         )
                     }
                 }
@@ -1111,17 +1148,68 @@ fun HomeScreen(
         // A button in the corner nearest the thumb, for the one app reached often enough to
         // deserve a target rather than a gesture. Nothing is drawn without an app chosen for
         // it, and it steps aside in edit mode, where that corner belongs to Done.
-        if ((cornerButtonApp != null || cornerButtonIsSearch) && !editMode) {
+        // Drawn whenever any of the three gestures is bound, not only when the tap is. Keying this
+        // off the tap alone meant a button set up for a hold or a swipe was never drawn at all,
+        // leaving those two gestures reachable from nowhere — the exact thing the extra
+        // gestures were added for.
+        if (!editMode && (cornerButtonApp != null || cornerButtonIsSearch ||
+                cornerLongPressAction != null || cornerSwipeUpAction != null)
+        ) {
             val corner = if (alignment == HomeAlignment.RIGHT) Alignment.BottomStart else Alignment.BottomEnd
+
+            // Whether the release belongs to the tap and hold recogniser. Cleared as each press begins
+            // rather than at the end of a drag, because a drag that consumed its movement never
+            // produces the click that would otherwise clear it — and a flag left set swallows
+            // the next real tap, which reads as a dead button rather than as a missed gesture.
+            var dragClaimed by remember { mutableStateOf(false) }
+            var swipedUp by remember { mutableStateOf(false) }
+            // Created here rather than inside pointerInput, which is not a composable scope.
+            // Keyed on the slop so a configuration change rebuilds it against the new one.
+            val swipeSlop = LocalViewConfiguration.current.touchSlop
+            val gesture = remember(swipeSlop) { CornerButtonDrag(swipeSlop) }
+
             Box(
                 modifier = Modifier
                     .align(corner)
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 24.dp)
                     .clip(CircleShape)
-                    .clickable {
-                        if (cornerButtonIsSearch) onOpenCornerSearch()
-                        else cornerButtonApp?.let { onOpenCornerApp(it) }
+                    .combinedClickable(
+                        onClick = {
+                            if (dragClaimed) return@combinedClickable
+                            if (cornerButtonIsSearch) onOpenCornerSearch()
+                            else cornerButtonApp?.let { onOpenCornerApp(it) }
+                        },
+                        onLongClick = { if (!dragClaimed) cornerLongPressAction?.invoke() },
+                    )
+                    .pointerInput(cornerSwipeUpAction) {
+                        // Only a real handler when something is bound to the gesture: a drag
+                        // recogniser with nothing to do would still eat touches from the tap.
+                        if (cornerSwipeUpAction == null) return@pointerInput
+                        awaitEachGesture {
+                            // Every press starts from a clean slate, so neither flag can
+                            // outlive the gesture that set it. This is the line the device-only
+                            // regression came from: dragClaimed used to be cleared by the click
+                            // that a consuming drag cancels, so nothing cleared it at all.
+                            gesture.onDown()
+                            dragClaimed = false
+                            swipedUp = false
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                val dy = change.positionChange().y
+                                if (dy != 0f) dragClaimed = true
+                                // Consumed only going up. Downward travel belongs to the pull
+                                // that opens the app list, and this sits in the same corner.
+                                if (gesture.onMove(dy)) {
+                                    swipedUp = true
+                                    change.consume()
+                                }
+                            }
+                            if (swipedUp) cornerSwipeUpAction.invoke()
+                        }
                     }
                     .padding(8.dp),
             ) {
@@ -1134,6 +1222,15 @@ fun HomeScreen(
                     )
                 } else {
                     cornerButtonApp?.let { AppIcon(app = it, sizeDp = iconSizeDp) }
+                        // No app of its own to draw, because the button is only bound to the
+                        // hold or the swipe. Something has to be there to aim at, and the app's
+                        // own icon would be a lie about what the tap does.
+                        ?: Icon(
+                            Icons.Filled.Apps,
+                            contentDescription = stringResource(R.string.settings_corner_button),
+                            tint = contentColor,
+                            modifier = Modifier.size(iconSizeDp.dp),
+                        )
                 }
             }
         }
@@ -1230,15 +1327,38 @@ private fun FavoriteRow(
     onRemove: () -> Unit,
     onEditIconName: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** Opens the widget picker, for the panel's widgets section. */
+    onAddWidget: () -> Unit,
+    /**
+     * Asks the screen to show the panel for this app: [topDp] is where it starts vertically
+     * and [leftDp] where its own left edge sits.
+     *
+     * Both come from the row rather than being computed. The panel belongs to the row that
+     * opened it — it starts just under that row and lines up with where its icon is, so it
+     * reads as coming out of the thing you swiped rather than appearing from the screen edge.
+     */
+    onOpenPanel: (AppInfo, Dp, Dp) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val density = LocalDensity.current
     var shortcutMenu by remember { mutableStateOf(false) }
+    // Kept here rather than read from the screen when the panel opens: between the swipe and
+    // the panel being drawn the list can move, and it would open from where the row used to be.
+    var rowBottomPx by remember { mutableStateOf(0f) }
+    var rowLeftPx by remember { mutableStateOf(0f) }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
+                // The panel opens from this row's own place: its bottom edge for where it
+                // starts, and its left edge for how far across it does. Measured in window
+                // space, because the home stack is offset by the scroll.
+                .onGloballyPositioned {
+                    val b = it.boundsInWindow()
+                    rowBottomPx = b.bottom.toFloat()
+                    rowLeftPx = b.left.toFloat()
+                }
                 // Only the icon and name answer a tap when the row is narrowed to them; the
                 // rest of the line is the home screen again, not a button nobody can see.
                 .then(if (compactTapArea) Modifier.align(alignment.boxAlignment()) else Modifier.fillMaxWidth())
@@ -1256,7 +1376,11 @@ private fun FavoriteRow(
                         Modifier
                             .recordTouchPosition(touchPosition)
                             .swipeForShortcuts(shortcutSwipe, app.kind == EntryKind.APP) {
-                                shortcutMenu = true
+                                // Handed up to the screen rather than opened here. This row is
+                                // one line tall, and a panel drawn inside it is clipped to it —
+                                // which is exactly what the dropdown this replaced never was,
+                                // because a popup is not drawn inside its anchor at all.
+                                onOpenPanel(app, with(density) { rowBottomPx.toDp() }, with(density) { rowLeftPx.toDp() })
                             }
                             .combinedClickable(
                                 interactionSource = interaction,
@@ -1306,7 +1430,7 @@ private fun FavoriteRow(
             )
         }
 
-        AppShortcutMenu(app, shortcutMenu, labelSizeSp) { shortcutMenu = false }
+        
 
         TouchAnchoredMenu(expanded = menuExpanded, offset = menuOffset, onDismissRequest = onDismissMenu) {
             DropdownMenuItem(
@@ -1704,7 +1828,9 @@ private fun NowPlayingBlock(
     )
 }
 @Composable
-private fun FolderIcon(
+// Not private: the A-Z list draws folders too, and a second implementation of a folder's
+// icon would be a second thing to keep in step with this one.
+internal fun FolderIcon(
     members: List<AppInfo>,
     sizeDp: Int,
     contentColor: Color,

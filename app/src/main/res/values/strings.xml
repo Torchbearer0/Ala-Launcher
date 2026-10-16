@@ -71,7 +71,26 @@
     <string name="settings_preview">Preview</string>
     <string name="settings_search">Search settings</string>
     <string name="settings_corner_search">Open the search</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="notifications_clear_all">Clear all</string>
+    <string name="notifications_empty">Nothing waiting to be read</string>
+    <string name="notifications_no_text">No text</string>
+    <string name="notifications_reply_hint">Reply</string>
+    <string name="notifications_reply_send">Send</string>
+    <string name="notifications_reply_cancel">Cancel</string>
+    <string name="app_panel_shortcuts">Shortcuts</string>
+    <string name="app_panel_widgets">Widgets</string>
+    <string name="app_panel_clear_all">Clear all from this app</string>
+    <string name="app_panel_close">Close</string>
+    <string name="app_panel_tap_to_open">Tap to open</string>
+    <string name="app_panel_empty">Nothing waiting here</string>
+    <string name="settings_notification_list">Notification list</string>
+    <string name="settings_folders_in_list">Folders in the app list</string>
+    <string name="settings_folders_in_list_detail">List each folder under its own name in the A-Z list. Off keeps the list a flat index, so every app is where you would look for it</string>
+    <string name="settings_notification_list_detail">Pull down on the home screen to read and dismiss notifications, instead of opening the system shade</string>
     <string name="settings_corner_button">Button in the bottom corner</string>
+    <string name="settings_corner_long_press">Hold that button</string>
+    <string name="settings_corner_swipe_up">Swipe that button up</string>
     <string name="settings_last_letter">Every letter on the same line</string>
     <string name="settings_last_letter_detail">Letters at the end of the list reach the same line as the rest. Costs a screen of empty space under the last app</string>
     <string name="settings_auto_keyboard">Open the keyboard with the list</string>
@@ -309,6 +328,8 @@
     <string name="widget_clock_color_pick">Choose</string>
     <string name="widget_clock_size_preview">12:34</string>
     <string name="widget_clock_weather">Weather</string>
+    <!-- Spoken form of the row: the glyph says it at a glance, but it says nothing at all to a screen reader. -->
+    <string name="widget_clock_weather_reading">%1$s, %2$s</string>
     <string name="widget_clock_notifications">Notifications</string>
     <string name="widget_clock_weather_show">Weather</string>
     <string name="widget_clock_weather_hide">No weather</string>

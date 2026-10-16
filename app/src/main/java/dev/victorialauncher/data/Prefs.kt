@@ -176,10 +176,14 @@ class Prefs(private val context: Context) {
         val FREQUENT_COUNT = intPreferencesKey("frequent_count")
         val SHOW_LIST_HEADERS = booleanPreferencesKey("show_list_headers")
         val NOTIFICATION_BADGES = booleanPreferencesKey("notification_badges")
+        val NOTIFICATION_LIST_ON_PULL = booleanPreferencesKey("notification_list_on_pull")
+        val FOLDERS_IN_APP_LIST = booleanPreferencesKey("folders_in_app_list")
         val SECTION_TOP_PERCENT = intPreferencesKey("section_top_percent")
         val CLOSE_FOLDER_ON_LAUNCH = booleanPreferencesKey("close_folder_on_launch")
         val SHOW_SETTINGS_ROW = booleanPreferencesKey("show_settings_row")
         val CORNER_BUTTON_KEY = stringPreferencesKey("corner_button_key")
+        val CORNER_BUTTON_LONG_PRESS_KEY = stringPreferencesKey("corner_button_long_press_key")
+        val CORNER_BUTTON_SWIPE_KEY = stringPreferencesKey("corner_button_swipe_key")
         val AUTO_KEYBOARD = booleanPreferencesKey("auto_keyboard")
         val LAST_LETTER_TO_LINE = booleanPreferencesKey("last_letter_to_line")
         val FAVORITES_EVER_SET = booleanPreferencesKey("favorites_ever_set")
@@ -502,9 +506,16 @@ class Prefs(private val context: Context) {
     val widgetOffsetXDp: Flow<Int> =
         data.map { (it[Keys.WIDGET_OFFSET_X_DP] ?: 0).coerceIn(-200, 200) }.distinctUntilChanged()
 
-    /** Opening the app list by swiping up from the home screen. */
+    /**
+     * Opening the app list by swiping up from the home screen.
+     *
+     * On by default. The swipe up is the one gesture every launcher shares and every launcher
+     * user already has in their fingers, and it is the only way into the A-Z list for anyone not
+     * using the edge zones — which are off by default themselves, and easier to miss than a
+     * swipe from the bottom of the screen is to find.
+     */
     val swipeUpOpensList: Flow<Boolean> =
-        data.map { it[Keys.SWIPE_UP_OPENS_LIST] ?: false }.distinctUntilChanged()
+        data.map { it[Keys.SWIPE_UP_OPENS_LIST] ?: true }.distinctUntilChanged()
 
     val appListSearchEnabled: Flow<Boolean> =
         data.map { it[Keys.APPLIST_SEARCH_ENABLED] ?: false }.distinctUntilChanged()
@@ -528,8 +539,16 @@ class Prefs(private val context: Context) {
         jsonToMap(pref[Keys.LAUNCH_COUNTS]).mapValues { (_, v) -> v.toIntOrNull() ?: 0 }
     }.distinctUntilChanged()
 
-    /** Width of the invisible strip at each screen edge that opens the app list. */
-    val edgeZoneWidthDp: Flow<Int> = data.map { it[Keys.EDGE_ZONE_WIDTH_DP] ?: 56 }.distinctUntilChanged()
+    /**
+     * Width of the invisible strip at each screen edge that opens the app list.
+     *
+     * Narrow on purpose. This is a gesture band, but home content inside it cannot be tapped,
+     * so the home screen holds its rows clear by exactly this much — meaning the setting
+     * doubles as the gap between a left-aligned icon and the screen edge. At the 56dp this
+     * used to default to, that gap was wider than any of the home screen's own padding and
+     * read as the alignment setting being ignored.
+     */
+    val edgeZoneWidthDp: Flow<Int> = data.map { it[Keys.EDGE_ZONE_WIDTH_DP] ?: 24 }.distinctUntilChanged()
 
     /**
      * How much of the very edge is left to the system rather than taken by the strip.
@@ -600,6 +619,29 @@ class Prefs(private val context: Context) {
     val notificationBadges: Flow<Boolean> =
         data.map { it[Keys.NOTIFICATION_BADGES] ?: false }.distinctUntilChanged()
 
+    /**
+     * Whether pulling down opens this launcher's own notification list, or the system shade.
+     *
+     * Off by default, so the system shade is what a pull gives you. It is the one built by the
+     * people who wrote the notifications, it knows about every app's inline reply and quick
+     * setting, and it is what every other launcher and the system itself has trained people to
+     * expect under that gesture. Taking it away by default would be a preference of ours over
+     * theirs; leaving the switch is not.
+     */
+    val notificationListOnPull: Flow<Boolean> =
+        data.map { it[Keys.NOTIFICATION_LIST_ON_PULL] ?: false }.distinctUntilChanged()
+
+    /**
+     * Whether folders are listed among the apps, or live only on the home screen.
+     *
+     * Off by default, and that default is the documented one: [Folder] keeps folders out of the
+     * A-Z list so the list stays a flat index and an app is always where you would look for it.
+     * Someone who came from a launcher that piles folders at the end of the list can turn this
+     * on and file a folder under its own name instead of hunting for it by scrolling.
+     */
+    val foldersInAppList: Flow<Boolean> =
+        data.map { it[Keys.FOLDERS_IN_APP_LIST] ?: false }.distinctUntilChanged()
+
     /** How far down the screen a scrubbed letter is parked, as a percentage of the viewport. */
     val sectionTopPercent: Flow<Int> =
         data.map { (it[Keys.SECTION_TOP_PERCENT] ?: 26).coerceIn(SECTION_TOP_RANGE) }
@@ -612,6 +654,25 @@ class Prefs(private val context: Context) {
      * for, so the two cannot disagree.
      */
     val cornerButtonKey: Flow<String?> = data.map { it[Keys.CORNER_BUTTON_KEY] }.distinctUntilChanged()
+
+    /**
+     * What the same button does when held down, or null for nothing.
+     *
+     * A separate key rather than a second entry in [cornerButtonKey]: the three gestures answer
+     * different intentions, and one app reached often enough for a tap is rarely the one wanted
+     * for a hold, which is why holding the button was doing nothing at all.
+     */
+    val cornerButtonLongPressKey: Flow<String?> =
+        data.map { it[Keys.CORNER_BUTTON_LONG_PRESS_KEY] }.distinctUntilChanged()
+
+    /**
+     * What the same button does when swiped up, or null for nothing.
+     *
+     * Kept apart from the quick-launch swipes in the space below the stack, which start on bare
+     * wallpaper and never on this button, so the two cannot be confused for one another.
+     */
+    val cornerButtonSwipeKey: Flow<String?> =
+        data.map { it[Keys.CORNER_BUTTON_SWIPE_KEY] }.distinctUntilChanged()
 
     /**
      * Whether opening the app list puts the cursor in the search box and the keyboard up.
@@ -1189,14 +1250,36 @@ class Prefs(private val context: Context) {
         context.dataStore.edit { it[Keys.NOTIFICATION_BADGES] = v }
     }
 
+    suspend fun setNotificationListOnPull(v: Boolean) {
+        context.dataStore.edit { it[Keys.NOTIFICATION_LIST_ON_PULL] = v }
+    }
+
+    suspend fun setFoldersInAppList(v: Boolean) {
+        context.dataStore.edit { it[Keys.FOLDERS_IN_APP_LIST] = v }
+    }
+
     suspend fun setSectionTopPercent(v: Int) {
         context.dataStore.edit { it[Keys.SECTION_TOP_PERCENT] = v.coerceIn(SECTION_TOP_RANGE) }
     }
 
-    suspend fun setCornerButton(componentKey: String?) {
+    suspend fun setCornerButton(componentKey: String?) = setCornerGesture(Keys.CORNER_BUTTON_KEY, componentKey)
+
+    suspend fun setCornerButtonLongPress(componentKey: String?) =
+        setCornerGesture(Keys.CORNER_BUTTON_LONG_PRESS_KEY, componentKey)
+
+    suspend fun setCornerButtonSwipe(componentKey: String?) =
+        setCornerGesture(Keys.CORNER_BUTTON_SWIPE_KEY, componentKey)
+
+    /**
+     * A blank key means the gesture is unbound, and removing it is how that is said.
+     *
+     * One place for all three, because a stored key that names nothing is the only state these
+     * can disagree about, and three copies of the rule would be three chances to get it wrong.
+     */
+    private suspend fun setCornerGesture(key: Preferences.Key<String>, componentKey: String?) {
         context.dataStore.edit { pref ->
-            if (componentKey.isNullOrBlank()) pref.remove(Keys.CORNER_BUTTON_KEY)
-            else pref[Keys.CORNER_BUTTON_KEY] = componentKey
+            if (componentKey.isNullOrBlank()) pref.remove(key)
+            else pref[key] = componentKey
         }
     }
 

@@ -185,6 +185,12 @@ fun SettingsScreen(
     onSetHoldScrollSpeed: (Int) -> Unit,
     notificationBadges: Boolean,
     onSetNotificationBadges: (Boolean) -> Unit,
+    /** Whether the deep pull opens this launcher's notification list or the system shade. */
+    notificationListOnPull: Boolean,
+    onSetNotificationListOnPull: (Boolean) -> Unit,
+    /** Whether folders are listed among the apps in the A-Z list. */
+    foldersInAppList: Boolean,
+    onSetFoldersInAppList: (Boolean) -> Unit,
     sectionTopPercent: Int,
     onSetSectionTopPercent: (Int) -> Unit,
     closeFolderOnLaunch: Boolean,
@@ -233,6 +239,11 @@ fun SettingsScreen(
     onOpenQuickLaunchPicker: (QuickLaunchSlot) -> Unit,
     cornerButtonLabel: String?,
     onOpenCornerPicker: () -> Unit,
+    /** What the same button opens when held, and when swiped up; null leaves that unbound. */
+    cornerLongPressLabel: String?,
+    onOpenCornerLongPressPicker: () -> Unit,
+    cornerSwipeUpLabel: String?,
+    onOpenCornerSwipeUpPicker: () -> Unit,
     autoKeyboard: Boolean,
     onSetAutoKeyboard: (Boolean) -> Unit,
     lastLetterToLine: Boolean,
@@ -642,7 +653,7 @@ fun SettingsScreen(
         SettingsEntry(SettingsSection.APP_LIST, stringResource(R.string.settings_edge_zone_width), "a-z strip width") {
             SliderRow(
                 label = stringResource(R.string.settings_edge_zone_width),
-                value = edgeZoneWidthDp.toFloat(), range = 32f..96f,
+                value = edgeZoneWidthDp.toFloat(), range = 16f..96f,
                 valueLabel = "${edgeZoneWidthDp}dp",
                 onValueChange = { edgePreviewTick++; onSetEdgeZoneWidth(it.roundToInt()) },
             )
@@ -722,6 +733,19 @@ fun SettingsScreen(
                 value = cornerButtonLabel,
                 onClick = onOpenCornerPicker,
             )
+            // The other two gestures on that same button, listed under it rather than as their
+            // own section: they are not separate features, and a heading each would imply they
+            // are. Each is a row of its own because each takes a different app.
+            QuickLaunchRow(
+                label = stringResource(R.string.settings_corner_long_press),
+                value = cornerLongPressLabel,
+                onClick = onOpenCornerLongPressPicker,
+            )
+            QuickLaunchRow(
+                label = stringResource(R.string.settings_corner_swipe_up),
+                value = cornerSwipeUpLabel,
+                onClick = onOpenCornerSwipeUpPicker,
+            )
         },
         SettingsEntry(SettingsSection.GESTURES, stringResource(R.string.settings_double_tap_lock), "lock screen") {
             SwitchRowWithDetail(
@@ -779,6 +803,20 @@ fun SettingsScreen(
         },
         SettingsEntry(SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_now_playing_show), "media music") {
             SwitchRow(stringResource(R.string.settings_now_playing_show), nowPlayingEnabled, onSetNowPlayingEnabled)
+        },
+        SettingsEntry(SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_notification_list), "notification list") {
+            SwitchRowWithDetail(
+                label = stringResource(R.string.settings_notification_list),
+                detail = stringResource(R.string.settings_notification_list_detail),
+                checked = notificationListOnPull, onCheckedChange = onSetNotificationListOnPull,
+            )
+        },
+        SettingsEntry(SettingsSection.APP_LIST, stringResource(R.string.settings_folders_in_list), "folders list") {
+            SwitchRowWithDetail(
+                label = stringResource(R.string.settings_folders_in_list),
+                detail = stringResource(R.string.settings_folders_in_list_detail),
+                checked = foldersInAppList, onCheckedChange = onSetFoldersInAppList,
+            )
         },
         SettingsEntry(
             SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_notification_access_detail), "permission access",

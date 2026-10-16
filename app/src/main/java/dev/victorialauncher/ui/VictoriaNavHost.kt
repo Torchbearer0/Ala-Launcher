@@ -334,6 +334,8 @@ fun VictoriaNavHost(
     val showListHeaders by app.prefs.showListHeaders.collectAsState(initial = true)
     val showSettingsRow by app.prefs.showSettingsRow.collectAsState(initial = true)
     val cornerButtonKey by app.prefs.cornerButtonKey.collectAsState(initial = null)
+    val cornerButtonLongPressKey by app.prefs.cornerButtonLongPressKey.collectAsState(initial = null)
+    val cornerButtonSwipeKey by app.prefs.cornerButtonSwipeKey.collectAsState(initial = null)
     val autoKeyboard by app.prefs.autoKeyboard.collectAsState(initial = false)
     val lastLetterToLine by app.prefs.lastLetterToLine.collectAsState(initial = false)
     val showFavoriteIcons by app.prefs.showFavoriteIcons.collectAsState(initial = true)
@@ -347,6 +349,8 @@ fun VictoriaNavHost(
     val quickLaunchRightKey by app.prefs.quickLaunchRight.collectAsState(initial = null)
     val showAppIcons by app.prefs.showAppIcons.collectAsState(initial = true)
     val notificationBadges by app.prefs.notificationBadges.collectAsState(initial = false)
+    val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = true)
+    val foldersInAppList by app.prefs.foldersInAppList.collectAsState(initial = false)
     val fontFile by app.prefs.fontFile.collectAsState(initial = null)
     val textColorCustom by app.prefs.textColorCustom.collectAsState(initial = 0xFFFFFFFF.toInt())
     val dimColor by app.prefs.dimColor.collectAsState(initial = 0xFF000000.toInt())
@@ -640,6 +644,14 @@ fun VictoriaNavHost(
             HomeRoute(
                 cornerButtonApp = cornerButtonKey?.takeIf { it != EntryKeys.SEARCH }?.let { appsByKey[it] },
                 cornerButtonIsSearch = cornerButtonKey == EntryKeys.SEARCH,
+                // A stored key that names no app is treated as unset rather than as a row that
+                // cannot be drawn, so uninstalling an app leaves no gesture that does nothing.
+                cornerLongPressApp = cornerButtonLongPressKey
+                    ?.takeIf { it != EntryKeys.SEARCH }?.let { appsByKey[it] },
+                cornerLongPressIsSearch = cornerButtonLongPressKey == EntryKeys.SEARCH,
+                cornerSwipeUpApp = cornerButtonSwipeKey
+                    ?.takeIf { it != EntryKeys.SEARCH }?.let { appsByKey[it] },
+                cornerSwipeUpIsSearch = cornerButtonSwipeKey == EntryKeys.SEARCH,
                 autoKeyboard = autoKeyboard,
                 lastLetterToLine = lastLetterToLine,
                 app = app,
@@ -743,6 +755,10 @@ fun VictoriaNavHost(
                 onSetShowListHeaders = { scope.launch { app.prefs.setShowListHeaders(it) } },
                 notificationBadges = notificationBadges,
                 onSetNotificationBadges = { scope.launch { app.prefs.setNotificationBadges(it) } },
+                notificationListOnPull = notificationListOnPull,
+                onSetNotificationListOnPull = { scope.launch { app.prefs.setNotificationListOnPull(it) } },
+                foldersInAppList = foldersInAppList,
+                onSetFoldersInAppList = { scope.launch { app.prefs.setFoldersInAppList(it) } },
                 sectionTopPercent = sectionTopPercent,
                 onSetSectionTopPercent = { scope.launch { app.prefs.setSectionTopPercent(it) } },
                 closeFolderOnLaunch = closeFolderOnLaunch,
@@ -873,6 +889,18 @@ fun VictoriaNavHost(
                     else -> appsByKey[cornerButtonKey]?.let { nameOverrides[it.key] ?: it.label }
                 },
                 onOpenCornerPicker = { navController.navigate("cornerpicker") },
+                cornerLongPressLabel = when (cornerButtonLongPressKey) {
+                    null -> null
+                    EntryKeys.SEARCH -> stringResource(R.string.settings_corner_search)
+                    else -> appsByKey[cornerButtonLongPressKey]?.let { nameOverrides[it.key] ?: it.label }
+                },
+                onOpenCornerLongPressPicker = { navController.navigate("cornerpicker/longpress") },
+                cornerSwipeUpLabel = when (cornerButtonSwipeKey) {
+                    null -> null
+                    EntryKeys.SEARCH -> stringResource(R.string.settings_corner_search)
+                    else -> appsByKey[cornerButtonSwipeKey]?.let { nameOverrides[it.key] ?: it.label }
+                },
+                onOpenCornerSwipeUpPicker = { navController.navigate("cornerpicker/swipeup") },
                 autoKeyboard = autoKeyboard,
                 lastLetterToLine = lastLetterToLine,
                 onSetLastLetterToLine = { scope.launch { app.prefs.setLastLetterToLine(it) } },
@@ -1014,6 +1042,43 @@ fun VictoriaNavHost(
                 iconSizeDp = iconSizeDp,
                 onPick = { picked ->
                     scope.launch { app.prefs.setCornerButton(picked?.key) }
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // The same picker as the tap, reached for the hold and the swipe. Which key a picker
+        // writes is passed in rather than read back from the route, so the three cannot drift
+        // apart and a fourth gesture is one argument here rather than another destination.
+        composable("cornerpicker/{gesture}") { entry ->
+            val gesture = entry.arguments?.getString("gesture") ?: "tap"
+            val key = when (gesture) {
+                "longpress" -> cornerButtonLongPressKey
+                else -> cornerButtonSwipeKey
+            }
+            AppPickerScreen(
+                title = stringResource(
+                    if (gesture == "longpress") R.string.settings_corner_long_press
+                    else R.string.settings_corner_swipe_up
+                ),
+                allApps = allApps,
+                selectedKey = key,
+                extraChoice = EntryKeys.SEARCH to stringResource(R.string.settings_corner_search),
+                onPickExtra = { picked ->
+                    scope.launch {
+                        if (gesture == "longpress") app.prefs.setCornerButtonLongPress(picked)
+                        else app.prefs.setCornerButtonSwipe(picked)
+                    }
+                    navController.popBackStack()
+                },
+                nameOverrides = nameOverrides,
+                iconSizeDp = iconSizeDp,
+                onPick = { picked ->
+                    scope.launch {
+                        if (gesture == "longpress") app.prefs.setCornerButtonLongPress(picked?.key)
+                        else app.prefs.setCornerButtonSwipe(picked?.key)
+                    }
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() },
