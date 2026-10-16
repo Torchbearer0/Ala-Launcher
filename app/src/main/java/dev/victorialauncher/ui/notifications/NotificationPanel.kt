@@ -109,8 +109,8 @@ fun NotificationPanel(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(top = 48.dp, start = 12.dp, end = 12.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color(0xE6222226))
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.Black.copy(alpha = 0.22f))
                 .clickable(
                     indication = null,
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },

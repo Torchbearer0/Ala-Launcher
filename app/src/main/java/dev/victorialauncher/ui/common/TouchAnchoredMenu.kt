@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
+
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpOffset
@@ -29,6 +32,16 @@ fun TouchAnchoredMenu(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(modifier = Modifier.offset(x = offset.x, y = offset.y).size(0.dp)) {
-        DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest, content = content)
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            shape = RoundedCornerShape(24.dp),
+            // Kept translucent like the AppPanel: legibility comes from blurring the home
+            // screen behind it, not from darkening the panel itself.
+            containerColor = Color.Black.copy(alpha = 0.22f),
+            shadowElevation = 0.dp,
+            tonalElevation = 0.dp,
+            content = content,
+        )
     }
 }
