@@ -66,6 +66,25 @@ class ClockWidgetProvider : AppWidgetProvider() {
         }
 
         /**
+         * Which drawing stands for which sky, or null when there is not one.
+         *
+         * The only step that needs a resource, which is why it is here and not in
+         * [ClockWidgetWeather.glyphFor]: the matching can then be tested without a device.
+         */
+        fun weatherDrawable(glyph: ClockWidgetWeather.WeatherGlyph): Int? = when (glyph) {
+            ClockWidgetWeather.WeatherGlyph.CLEAR -> R.drawable.ic_weather_clear
+            ClockWidgetWeather.WeatherGlyph.PARTLY_CLOUDY -> R.drawable.ic_weather_partly_cloudy
+            ClockWidgetWeather.WeatherGlyph.CLOUDY -> R.drawable.ic_weather_cloudy
+            ClockWidgetWeather.WeatherGlyph.FOG -> R.drawable.ic_weather_fog
+            ClockWidgetWeather.WeatherGlyph.DRIZZLE -> R.drawable.ic_weather_drizzle
+            ClockWidgetWeather.WeatherGlyph.RAIN -> R.drawable.ic_weather_rain
+            ClockWidgetWeather.WeatherGlyph.SNOW -> R.drawable.ic_weather_snow
+            ClockWidgetWeather.WeatherGlyph.THUNDERSTORM -> R.drawable.ic_weather_thunderstorm
+            // No picture for wording this does not recognise. The temperature still shows.
+            ClockWidgetWeather.WeatherGlyph.UNKNOWN -> null
+        }
+
+        /**
          * Draws one widget as its own settings ask.
          *
          * Forcing 12 or 24 hours means giving TextClock the same pattern for both, since it
@@ -124,14 +143,44 @@ class ClockWidgetProvider : AppWidgetProvider() {
                 val weather = if (config.showWeather) ClockWidgetWeather.current(context) else null
                 if (weather == null) {
                     setViewVisibility(R.id.widget_weather, View.GONE)
+                    setViewVisibility(R.id.widget_weather_icon, View.GONE)
                 } else {
                     setViewVisibility(R.id.widget_weather, View.VISIBLE)
                     setTextViewText(
                         R.id.widget_weather,
-                        ClockWidgetWeather.formatted(weather, config.weatherFahrenheit),
+                        ClockWidgetWeather.degrees(weather, config.weatherFahrenheit),
                     )
                     setTextViewTextSize(R.id.widget_weather, TypedValue.COMPLEX_UNIT_SP, config.weatherSizeSp.toFloat())
-                    setTextColor(R.id.widget_weather, config.colorAt(config.weatherOpacity))
+                    val weatherColor = config.colorAt(config.weatherOpacity)
+                    setTextColor(R.id.widget_weather, weatherColor)
+
+                    // The picture says which sky it is, in the space a number would not fit into.
+                    // Hidden when the wording could not be read rather than guessing at one.
+                    val drawable = weatherDrawable(ClockWidgetWeather.glyphFor(weather.condition))
+                    if (drawable == null) {
+                        setViewVisibility(R.id.widget_weather_icon, View.GONE)
+                    } else {
+                        setViewVisibility(R.id.widget_weather_icon, View.VISIBLE)
+                        setImageViewResource(R.id.widget_weather_icon, drawable)
+                        // Tinted rather than drawn in a colour of its own, so it follows the
+                        // widget's configured opacity like every other mark on it.
+                        setInt(R.id.widget_weather_icon, "setColorFilter", weatherColor)
+                    }
+
+                    // The glyph is decoration to a screen reader, so the words it stands in for
+                    // move into the description rather than onto the row.
+                    setContentDescription(
+                        R.id.widget_weather,
+                        if (weather.condition.isBlank()) {
+                            ClockWidgetWeather.degrees(weather, config.weatherFahrenheit)
+                        } else {
+                            context.getString(
+                                R.string.widget_clock_weather_reading,
+                                weather.condition,
+                                ClockWidgetWeather.degrees(weather, config.weatherFahrenheit),
+                            )
+                        },
+                    )
                 }
 
                 // A count and nothing else, for the same reason the badges carry no text: what

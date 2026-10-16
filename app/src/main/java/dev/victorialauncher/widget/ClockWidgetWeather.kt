@@ -62,12 +62,80 @@ object ClockWidgetWeather {
         return true
     }
 
-    fun formatted(reading: Reading, fahrenheit: Boolean): String {
+    /** The reading on its own, for the row: just how warm it is. */
+    fun degrees(reading: Reading, fahrenheit: Boolean): String {
         val celsius = reading.tempK - 273.15
         val value = if (fahrenheit) celsius * 9 / 5 + 32 else celsius
         val unit = if (fahrenheit) "F" else "C"
-        val degrees = String.format(Locale.getDefault(), "%.0f°%s", value, unit)
+        return String.format(Locale.getDefault(), "%.0f°%s", value, unit)
+    }
+
+    /**
+     * Degrees and the condition in words, for anywhere that has room for both.
+     *
+     * The clock widget itself draws an icon instead of the words (see [glyphFor]) and keeps the
+     * condition for the content description, because a glyph nobody can read is not a forecast.
+     */
+    fun formatted(reading: Reading, fahrenheit: Boolean): String {
+        val degrees = degrees(reading, fahrenheit)
         return if (reading.condition.isEmpty()) degrees else "$degrees  ${reading.condition}"
+    }
+
+    /**
+     * The picture that goes with a condition, if one can be told from the words.
+     *
+     * The condition is free text written by whichever app chose to send it, so this matches
+     * substrings rather than expecting any particular wording. [UNKNOWN] is a real answer and
+     * not a failure: a sender is free to send something this does not know, and drawing a
+     * confident wrong sky is worse than drawing no sky.
+     *
+     * Two simplifications worth stating rather than hiding. A sender that reports more than one
+     * condition at once ("partly cloudy, light rain later") is drawn as whichever word this
+     * finds first, not as the first half of the sentence; parsing that needs a real forecast
+     * model, and guessing at one would be worse than taking the first word. And "shower" is
+     * matched on its own, so a phrase that uses it for something other than rain would be drawn
+     * as rain. Both are recorded here because they are the cases that would otherwise look like
+     * bugs in the drawing rather than in the matching.
+     *
+     * Deliberately free of any resource reference so it can be tested without a device. The
+     * glyph-to-drawable step is the provider's, which is the only part that needs an `R`.
+     */
+    fun glyphFor(condition: String): WeatherGlyph {
+        val text = condition.lowercase(Locale.ROOT)
+        if (text.isBlank()) return WeatherGlyph.UNKNOWN
+        // In this order because the general words are inside the specific ones: a thunderstorm
+        // is also rain, sleet is also rain, "mostly cloudy" is also cloudy. Asking the broad
+        // question first is how a thunderstorm ends up drawn as a drizzle.
+        return when {
+            contains(text, "thunder", "lightning", "storm", "thundershower") ->
+                WeatherGlyph.THUNDERSTORM
+            contains(text, "snow", "sleet", "blizzard", "hail", "freezing") ->
+                WeatherGlyph.SNOW
+            contains(text, "drizzle") -> WeatherGlyph.DRIZZLE
+            contains(text, "rain", "shower") -> WeatherGlyph.RAIN
+            contains(text, "fog", "mist", "haze", "smoke", "dust") -> WeatherGlyph.FOG
+            contains(text, "partly", "mostly cloud", "few cloud",
+                     "scattered", "broken", "intervals") -> WeatherGlyph.PARTLY_CLOUDY
+            contains(text, "cloud", "overcast") -> WeatherGlyph.CLOUDY
+            contains(text, "clear", "sunny", "fair", "blue sky") -> WeatherGlyph.CLEAR
+            else -> WeatherGlyph.UNKNOWN
+        }
+    }
+
+    private fun contains(text: String, vararg needles: String): Boolean =
+        needles.any { text.contains(it) }
+
+    /** What can be drawn. Anything not listed here draws nothing rather than something wrong. */
+    enum class WeatherGlyph {
+        CLEAR,
+        PARTLY_CLOUDY,
+        CLOUDY,
+        FOG,
+        DRIZZLE,
+        RAIN,
+        SNOW,
+        THUNDERSTORM,
+        UNKNOWN,
     }
 
     /** Where Fahrenheit is what people mean by a temperature, so the first draw is not wrong. */
