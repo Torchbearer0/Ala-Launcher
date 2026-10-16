@@ -706,20 +706,21 @@ fun HomeRoute(
                         // gesture it was meant to be leaving alone.
                         val density = LocalDensity.current
                         val gesturePadding = WindowInsets.systemGestures.asPaddingValues()
-                        val backBandPx = with(density) {
-                            maxOf(
-                                gesturePadding.calculateLeftPadding(LayoutDirection.Ltr),
-                                gesturePadding.calculateRightPadding(LayoutDirection.Ltr),
-                            ).roundToPx()
-                        }
-                        Modifier.pointerInput(backBandPx) {
+                        val leftPx = with(density) { gesturePadding.calculateLeftPadding(LayoutDirection.Ltr).roundToPx() }
+                        val rightPx = with(density) { gesturePadding.calculateRightPadding(LayoutDirection.Ltr).roundToPx() }
+                        val topPx = with(density) { gesturePadding.calculateTopPadding().roundToPx() }
+                        val bottomPx = with(density) { gesturePadding.calculateBottomPadding().roundToPx() }
+                        Modifier.pointerInput(leftPx, rightPx, topPx, bottomPx) {
                             awaitEachGesture {
                                 while (true) {
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
                                     val width = size.width
+                                    val height = size.height
                                     event.changes.forEach { change ->
-                                        val nearEdge = change.position.x < backBandPx ||
-                                            change.position.x > width - backBandPx
+                                        val nearEdge = change.position.x < leftPx ||
+                                            change.position.x > width - rightPx ||
+                                            change.position.y < topPx ||
+                                            change.position.y > height - bottomPx
                                         if (!nearEdge) change.consume()
                                     }
                                     if (event.changes.none { it.pressed }) break

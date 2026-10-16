@@ -41,6 +41,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
@@ -113,6 +115,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.victorialauncher.data.AppInfo
@@ -859,7 +862,10 @@ fun AppListScreen(
                                 val resistance = 1f - (abs(overPull) / maxPullPx).coerceIn(0f, 0.75f)
                                 overPull = (overPull + excess * resistance)
                                     .coerceIn(-maxPullPx, maxPullPx)
-                                return available
+                                // Leave the horizontal component unconsumed: a nested scroll that
+                                // swallows x takes the system's back gesture with it even when
+                                // the pointer layer above already yields the edge.
+                                return Offset(0f, available.y)
                             }
                         }
                     }
@@ -880,7 +886,10 @@ fun AppListScreen(
                                 val resistance = 1f - (abs(overPull) / maxPullPx).coerceIn(0f, 0.75f)
                                 overPull = (overPull + excess * resistance)
                                     .coerceIn(-maxPullPx, maxPullPx)
-                                return available
+                                // Leave the horizontal component unconsumed: a nested scroll that
+                                // swallows x takes the system's back gesture with it even when
+                                // the pointer layer above already yields the edge.
+                                return Offset(0f, available.y)
                             }
                         }
                     }
@@ -931,10 +940,12 @@ fun AppListScreen(
                     // separate flag for which end is in play.
                     val resistance = 1f - (abs(overPull) / maxPullPx).coerceIn(0f, 0.75f)
                     overPull = (overPull + available.y * resistance).coerceIn(-maxPullPx, maxPullPx)
-                    return available
+                    // Consume the vertical pull only; the horizontal belongs to the system.
+                    return Offset(0f, available.y)
                 }
                 stretch(available.y)
-                return available
+                // Consume the vertical stretch only; leave horizontal for the system.
+                return Offset(0f, available.y)
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
@@ -976,11 +987,13 @@ fun AppListScreen(
                         // because a hidden overlay is measured but never placed.
                         collapsing = false
                     }
-                    return available
+                    // Preserve horizontal velocity for the system/back gesture handling.
+                    return Velocity(0f, available.y)
                 }
                 if (stretchPx != 0f) {
                     startSettle(available.y)
-                    return available
+                    // Preserve horizontal velocity for the system.
+                    return Velocity(0f, available.y)
                 }
                 return Velocity.Zero
             }
@@ -988,7 +1001,8 @@ fun AppListScreen(
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 if (collapsing || stretchSettling || available.y == 0f) return Velocity.Zero
                 startSettle(available.y)
-                return available
+                // Preserve horizontal velocity for the system.
+                return Velocity(0f, available.y)
             }
         }
     }
@@ -1010,6 +1024,16 @@ fun AppListScreen(
             y < last.offset + last.size - info.viewportStartOffset
     }
 
+    // How wide the system's own back-gesture region is along each edge. The drawer's root
+    // layer must not claim a touch that starts there, or BACK is stolen exactly as the home
+    // layer and the edge zone already learned not to.
+    val densityNow = LocalDensity.current
+    val gesturePadding = WindowInsets.systemGestures.asPaddingValues()
+    val leftPx = with(densityNow) { gesturePadding.calculateLeftPadding(LayoutDirection.Ltr).roundToPx() }
+    val rightPx = with(densityNow) { gesturePadding.calculateRightPadding(LayoutDirection.Ltr).roundToPx() }
+    val topPx = with(densityNow) { gesturePadding.calculateTopPadding().roundToPx() }
+    val bottomPx = with(densityNow) { gesturePadding.calculateBottomPadding().roundToPx() }
+
     // Same reason as the home screen: the rows inherit the ambient style, so one provider
     // puts the shadow behind every name rather than each call naming it.
     CompositionLocalProvider(
@@ -1021,9 +1045,20 @@ fun AppListScreen(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(listConnection)
-            .pointerInput(listState) {
+            .pointerInput(listState, leftPx, rightPx, topPx, bottomPx) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Stand down entirely inside the system's gesture insets on any side: this
+                    // layer sits above the home layer and the edge zone, so claiming a touch
+                    // there steals BACK (and the other edge gestures) even though the lower
+                    // layers already yield. Standing down means not monitoring at all.
+                    val nearSystemEdge = size.width > 0 && size.height > 0 && (
+                        down.position.x < leftPx ||
+                            down.position.x > size.width - rightPx ||
+                            down.position.y < topPx ||
+                            down.position.y > size.height - bottomPx
+                        )
+                    if (nearSystemEdge) return@awaitEachGesture
                     val start = down.position
                     var claimed = false
                     var moved = false

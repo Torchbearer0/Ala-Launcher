@@ -95,12 +95,13 @@ fun EdgeTouchZone(
     // claim: BACK is recognised from the same stream this zone reads, and claiming a down
     // there means the launcher silently wins a gesture the user meant for the system. Read
     // rather than assumed, because the figure is the platform's and not ours to set.
+    val fromLeft = side == EdgeSide.LEFT
     val gestureBandPx = with(LocalDensity.current) {
-        WindowInsets.systemGestures.asPaddingValues().calculateLeftPadding(LayoutDirection.Ltr)
-            .roundToPx()
+        val padding = WindowInsets.systemGestures.asPaddingValues()
+        if (fromLeft) padding.calculateLeftPadding(LayoutDirection.Ltr).roundToPx()
+        else padding.calculateRightPadding(LayoutDirection.Ltr).roundToPx()
     }
     val scope = rememberCoroutineScope()
-    val fromLeft = side == EdgeSide.LEFT
     // The gesture handler outlives the composition that built it, so it must not close over
     // this frame's callbacks.
     val currentDoubleTap by rememberUpdatedState(onDoubleTap)
