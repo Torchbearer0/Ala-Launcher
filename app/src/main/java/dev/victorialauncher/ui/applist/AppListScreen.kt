@@ -107,6 +107,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
@@ -116,6 +117,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.EdgeSide
+import dev.victorialauncher.data.Folder
+import dev.victorialauncher.ui.home.FolderIcon
 import dev.victorialauncher.data.EntryKind
 import dev.victorialauncher.data.HomeAlignment
 import dev.victorialauncher.data.IconSide
@@ -218,6 +221,8 @@ fun AppListScreen(
     /** Which apps are hidden, so a search that turns one up can say so and put it back. */
     hiddenApps: Set<String>,
     onMoveToFolder: (AppInfo) -> Unit,
+    /** Opens a folder row, where the list shows folders at all. */
+    onOpenFolder: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
     contentColor: Color,
@@ -1208,11 +1213,21 @@ fun AppListScreen(
                         is AppListRow.Header -> "header:${row.text}"
                         is AppListRow.Entry ->
                             row.section?.let { "$it:${row.app.key}" } ?: row.app.key
+                        // A folder id is unique among folders but is not an app key, so the
+                        // prefix keeps the two key spaces from ever colliding.
+                        is AppListRow.Folder ->
+                            row.section?.let { "$it:${row.folder.id}" } ?: "folder:${row.folder.id}"
                     }
                 },
                 // Headers and app rows are laid out nothing alike; telling the list so lets
                 // it reuse each kind against its own pool while scrubbing.
-                contentType = { _, row -> row is AppListRow.Header },
+                contentType = { _, row ->
+                    when (row) {
+                        is AppListRow.Header -> "header"
+                        is AppListRow.Entry -> "app"
+                        is AppListRow.Folder -> "folder"
+                    }
+                },
             ) { index, row ->
                 Box(
                     // Read in the draw phase on purpose: the scrub fade would otherwise
@@ -1247,6 +1262,18 @@ fun AppListScreen(
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },
                         isHidden = row.app.key in hiddenApps,
                         onMoveToFolder = { onMoveToFolder(row.app) },
+                    )
+                    // A folder offers only the one thing that can be done with it from here,
+                    // which is open it. The menu belongs to the apps inside it, and reaching
+                    // those is what opening it is for.
+                    is AppListRow.Folder -> FolderRow(
+                        folder = row.folder,
+                        contentColor = contentColor,
+                        alignment = alignment,
+                        iconSide = iconSide,
+                        iconSizeDp = iconSizeDp,
+                        labelSizeSp = labelSizeSp,
+                        onOpen = { onOpenFolder(row.folder.id) },
                     )
                 }
                 }
@@ -1392,6 +1419,83 @@ private fun SectionHeader(text: String, labelSizeSp: Int, contentColor: Color, a
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 18.dp, bottom = 6.dp),
         )
+    }
+}
+
+/**
+ * A folder, shown where an app of the same name would be.
+ *
+ * Deliberately thinner than [AppRow]: there is no app behind it to hide, pin, edit or get the
+ * app info of, so every one of those would be a dead end. It offers the one action that exists,
+ * which is to open it.
+ */
+@Composable
+private fun FolderRow(
+    folder: Folder,
+    contentColor: Color,
+    alignment: HomeAlignment,
+    iconSide: IconSide,
+    iconSizeDp: Int,
+    labelSizeSp: Int,
+    onOpen: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .background(
+                color = if (pressed) contentColor.copy(alpha = 0.15f) else Color.Transparent,
+                shape = RoundedCornerShape(18.dp),
+            )
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onOpen,
+            )
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val arrangement = if (iconSide == IconSide.LEFT) Arrangement.Start else Arrangement.End
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = arrangement,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (iconSide == IconSide.LEFT) {
+                FolderIcon(
+                    members = emptyList(),
+                    sizeDp = iconSizeDp,
+                    contentColor = contentColor,
+                    iconOverride = folder.icon,
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = folder.name,
+                    color = contentColor,
+                    fontSize = labelSizeSp.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Text(
+                    text = folder.name,
+                    color = contentColor,
+                    fontSize = labelSizeSp.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(16.dp))
+                FolderIcon(
+                    members = emptyList(),
+                    sizeDp = iconSizeDp,
+                    contentColor = contentColor,
+                    iconOverride = folder.icon,
+                )
+            }
+        }
     }
 }
 

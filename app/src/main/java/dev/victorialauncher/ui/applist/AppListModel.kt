@@ -3,6 +3,7 @@ package dev.victorialauncher.ui.applist
 
 import androidx.compose.runtime.Immutable
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.Folder
 import android.icu.text.Transliterator
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -25,6 +26,22 @@ sealed interface AppListRow {
      * screen down with it.
      */
     data class Entry(val app: AppInfo, val section: String? = null) : AppListRow
+
+    /**
+     * A folder, listed among the apps and filed under its own name.
+     *
+     * Opt-in, because [dev.victorialauncher.data.Folder] keeps folders out of this list on
+     * purpose: a flat index is where an app is always where you would look for it. This exists
+     * for people who came from a launcher where folders sit at the end of the list and grew
+     * tired of scrolling for one, and it is off unless asked for, so the decision that
+     * documented still stands for everyone else.
+     *
+     * The folder's own apps are *not* listed under it. They are already in the list under their
+     * own names; repeating them here would put one app on the screen twice and hide nothing.
+     */
+    // Qualified, because inside this interface the name Folder resolves to this class rather
+    // than to the one in data.
+    data class Folder(val folder: dev.victorialauncher.data.Folder, val section: String? = null) : AppListRow
 }
 
 /**
@@ -191,6 +208,15 @@ fun buildAppListModel(
     privateSectionLabel: String? = null,
     /** Heading and how many, for a section of what was installed most recently. */
     recentSection: Pair<String, Int>? = null,
+    /**
+     * Folders to list among the apps, and whether to list them at all.
+     *
+     * Two arguments rather than an empty list meaning the same thing, because "show folders"
+     * and "you have no folders" must not look alike to the caller: an empty list with the
+     * setting on still means the rows were considered and there were none.
+     */
+    folders: List<Folder> = emptyList(),
+    showFolders: Boolean = false,
 ): AppListModel {
     val all = apps.filter { it.key !in hidden }
     // Lifted out of the alphabet entirely rather than listed twice. A private app and its main
@@ -198,18 +224,42 @@ fun buildAppListModel(
     val visible = if (privateSectionLabel == null) all else all.filterNot { it.privateProfile }
     val rows = mutableListOf<AppListRow>()
 
+    /** The name a row is sorted and filed by, for apps and folders alike. */
+    fun rowName(row: AppListRow): String = when (row) {
+        is AppListRow.Entry -> displayName(row.app)
+        is AppListRow.Folder -> row.folder.name
+        is AppListRow.Header -> row.text
+    }
+
     val byLetter = visible.groupBy { app ->
         filingLetter(displayName(app), renamed(app)) { englishName(app) }
     }
 
+    // A folder is filed under its own name, through the same rules, so that one named Games
+    // lands under G rather than in a section of its own. Empty unless the setting is on, which
+    // is what keeps the documented decision the default.
+    val foldersByLetter = if (showFolders) {
+        folders.groupBy { folder -> filingLetter(folder.name, false) { null } }
+    } else {
+        emptyMap()
+    }
+
     val letterIndex = mutableListOf<Pair<Char, Int>>()
-    byLetter.toSortedMap().forEach { (letter, list) ->
+    (byLetter.keys + foldersByLetter.keys).sorted().forEach { letter ->
         letterIndex += letter to rows.size
         if (showHeaders) rows += AppListRow.Header(letter.toString())
-        list.sortedWith(
+        val appRows = byLetter[letter].orEmpty().sortedWith(
             compareByDescending<AppInfo> { launchCounts[it.key] ?: 0 }
                 .thenBy { displayName(it).lowercase() }
-        ).forEach { rows += AppListRow.Entry(it) }
+        ).map { AppListRow.Entry(it) }
+        val folderRows = foldersByLetter[letter].orEmpty()
+            .sortedBy { it.name.lowercase() }
+            .map { AppListRow.Folder(it) }
+
+        // Sorted by usage, the apps keep the order the user asked for and the folders go after
+        // them, because a folder has no launch count to rank by. Sorted by name — the default —
+        // everything in the letter sorts together, so Games sits where G says it should.
+        rows += mergeSorted(appRows, folderRows, { row -> rowName(row) }, launchCounts.isNotEmpty())
     }
 
     // Appended after the alphabet, each under its own heading. Not given a letter of their
@@ -235,6 +285,31 @@ fun buildAppListModel(
     }
 
     return AppListModel(rows, letterIndex)
+}
+
+/**
+ * Puts a letter's apps and its folders into one order.
+ *
+ * Separate from [buildAppListModel] and free of Android types, because the model cannot be built
+ * on the JVM — [AppInfo] holds a ComponentName, which is a framework stub there — and this is
+ * the part worth pinning. An ordering that silently put a folder at the end of its letter, or
+ * interleaved folders into a usage-sorted list, would look like the feature not working rather
+ * than like a bug.
+ *
+ * @param byUsage the list is ranked by how often each app is opened. A folder has no such
+ *   count, so ranking it would mean inventing one; it goes after the apps instead, sorted by
+ *   name among itself. Without usage the two are simply interleaved by name.
+ */
+internal fun <T> mergeSorted(
+    apps: List<T>,
+    folders: List<T>,
+    nameOf: (T) -> String,
+    byUsage: Boolean,
+): List<T> {
+    if (byUsage) return apps + folders.sortedBy { nameOf(it).lowercase() }
+    // A stable sort on the names alone, so two rows of the same name keep the order they came
+    // in rather than being left to whatever the sort feels like.
+    return (apps + folders).sortedBy { nameOf(it).lowercase() }
 }
 
 /**
@@ -272,6 +347,10 @@ fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
                 pendingHeader?.let { kept += it; pendingHeader = null }
                 kept += row
             }
+            // Dropped while searching, deliberately. The filter is over apps, and a folder's
+            // apps are already listed under their own names — keeping the folder would show
+            // every folder for every query, which is noise rather than a result.
+            is AppListRow.Folder -> Unit
         }
     }
     return AppListModel(kept, newIndex)
