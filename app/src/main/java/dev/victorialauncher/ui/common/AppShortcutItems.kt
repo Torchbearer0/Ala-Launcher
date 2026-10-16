@@ -115,11 +115,12 @@ fun Modifier.swipeForShortcuts(
     enabled: Boolean,
     onSwipe: () -> Unit,
 ): Modifier =
-    if (mode == ShortcutSwipe.OFF || !enabled) this else this.pointerInput(mode) {
+    if (mode == ShortcutSwipe.OFF || !enabled) {        this
+    } else this.pointerInput(mode) {
         var travelled = 0f
         var fired = false
         detectHorizontalDragGestures(
-            onDragStart = { travelled = 0f; fired = false },
+            onDragStart = { travelled = 0f; fired = false; android.util.Log.w("VictoriaPanel", "dragStart") },
             onDragEnd = { },
             onDragCancel = { },
         ) { change, amount ->

@@ -1,0 +1,390 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package dev.victorialauncher.ui.common
+
+import android.appwidget.AppWidgetManager
+import android.content.pm.ShortcutInfo
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
+import dev.victorialauncher.R
+import dev.victorialauncher.VictoriaApp
+import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.media.NotificationBus
+import dev.victorialauncher.media.NowPlayingListenerService
+import dev.victorialauncher.ui.notifications.NotificationRow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private const val MAX_SHORTCUTS = 5
+private const val MAX_WIDGETS = 4
+private const val ICON_PX = 72
+
+/** Clear of the navigation bar and the gesture pill. */
+private const val PANEL_BOTTOM_GAP_DP = 28
+
+/** Tall enough for notifications, five shortcuts and four widgets, and no taller. */
+private const val PANEL_MAX_HEIGHT_DP = 560
+
+/**
+ * Everything one app has going on: what it is telling you, what it offers, and what it can put
+ * on the home screen.
+ *
+ * Opened by swiping a row sideways rather than by tapping it, because a tap is already spoken
+ * for and this is a second look rather than a first one.
+ *
+ * A section with nothing in it is not drawn. Most apps publish no shortcuts and most publish no
+ * widgets, and three permanently empty headings would make this a place to read rather than
+ * something to glance at.
+ */
+@Composable
+fun AppPanel(
+    app: AppInfo,
+    labelSizeSp: Int,
+    /** Where the panel starts, as a top offset: just under the row that was swiped. */
+    topDp: Dp,
+    /** Where the panel's own left edge sits: in line with the row's icon. */
+    leftDp: Dp,
+    onDismiss: () -> Unit,
+    onOpenApp: () -> Unit,
+    onOpenWidgetPicker: () -> Unit,
+) {
+    val context = LocalContext.current
+    val victoriaApp = context.applicationContext as VictoriaApp
+    val density = context.resources.displayMetrics.density
+    val densityPx = context.resources.displayMetrics.densityDpi
+    val packageName = app.componentName.packageName
+
+    val all by NotificationBus.notifications.collectAsState()
+    // This app's own, and not its group summary: the summary is a heading for messages that
+    // are listed here already.
+    val notifications = remember(all, packageName) {
+        all.filter { it.packageName == packageName && !it.isGroupSummary }
+    }
+
+    var shortcuts by remember(app.key) { mutableStateOf<List<ShortcutInfo>>(emptyList()) }
+    var widgetLabels by remember(app.key) { mutableStateOf<List<String>>(emptyList()) }
+
+    // Read once when the panel opens rather than as the list is drawn: shortcuts are a call
+    // into the system per app, and the widgets are a query across every installed provider.
+    LaunchedEffect(app.key) {
+        val repo = victoriaApp.appRepository
+        shortcuts = withContext(Dispatchers.IO) { repo.appShortcuts(app).take(MAX_SHORTCUTS) }
+        widgetLabels = withContext(Dispatchers.IO) {
+            runCatching {
+                AppWidgetManager.getInstance(context).installedProviders
+                    .filter { it.provider.packageName == packageName }
+                    .map { info ->
+                        val label = info.label?.toString()
+                        if (label.isNullOrBlank()) info.provider.packageName else label
+                    }
+                    .distinct()
+                    .take(MAX_WIDGETS)
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    // Measured, not assumed. Clamping against a fixed maximum put every panel from the middle of
+    // the list downward at one height, which threw away the thing the placement was for: a
+    // panel belongs under the row that opened it. Measuring what this panel actually needs and
+    // moving it up only by that much keeps it under its own row wherever there is room, and
+    // lifts it just enough where there is not.
+    var panelHeightPx by remember { mutableStateOf(0) }
+    val densityNow = LocalDensity.current
+    val placedTopPx = with(densityNow) {
+        val screenPx = LocalConfiguration.current.screenHeightDp.dp.toPx()
+        val gapPx = PANEL_BOTTOM_GAP_DP.dp.toPx()
+        // The offset is applied after layout, so reading the height here cannot feed back into
+        // it: the panel is measured at whatever top it was drawn at first, and only then moved.
+        minOf(topDp.toPx(), screenPx - panelHeightPx - gapPx).coerceAtLeast(0f)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // Barely there: the blur behind is doing the work. The scrim is only there to say
+            // "this screen is behind something" — the home screen under it is already out of
+            // focus, so it needs no more hiding than a little dim.
+            .background(Color.Black.copy(alpha = 0.10f))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onDismiss,
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                // Only as tall as what it has to say, and starting under the row that opened
+                // it and in line with that row's icon. A panel pinned to the screen's corner
+                // reads as a dialog; one that comes out of the row reads as belonging to it.
+                .offset { IntOffset(0, placedTopPx.roundToInt()) }
+                .padding(start = leftDp, end = 8.dp)
+                .widthIn(max = 340.dp)
+                // A ceiling for a panel with a great deal in it. The list inside scrolls, so
+                // hitting this costs nothing but the bottom rows being below the fold.
+                .heightIn(max = PANEL_MAX_HEIGHT_DP.dp)
+                .onSizeChanged { panelHeightPx = it.height }
+                .clip(RoundedCornerShape(24.dp))
+                // Near-clear. Over a blurred home screen the text reads on its own, and the
+                // grey card this replaced was the thing that made it look like a dialog.
+                .background(Color.Black.copy(alpha = 0.22f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = {},
+                ),
+        ) {
+            AppPanelHeader(
+                app = app,
+                clearableCount = notifications.count { it.clearable },
+                onOpenApp = onOpenApp,
+                onDismiss = onDismiss,
+                onClearAll = {
+                    // This app's, and only what the system will let go of: a playing track or a
+                    // running download is not something to tidy away.
+                    notifications.filter { it.clearable }
+                        .forEach { NowPlayingListenerService.dismiss(it.key) }
+                },
+            )
+
+            LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                if (notifications.isNotEmpty()) {
+                    item(key = "label-notifications") {
+                        PanelLabel(stringResource(R.string.notifications_title))
+                    }
+                    items(notifications, key = { it.key }) { entry ->
+                        NotificationRow(
+                            entry = entry,
+                            onDismiss = { NowPlayingListenerService.dismiss(entry.key) },
+                            onPerformAction = { action, text ->
+                                NowPlayingListenerService.performAction(
+                                    action.intent, action.remoteInputs, text,
+                                )
+                            },
+                            // Already inside this app's own panel, so the body does not open the
+                            // app: that is what the header is for.
+                            onOpen = null,
+                        )
+                    }
+                }
+
+                if (shortcuts.isNotEmpty()) {
+                    item(key = "label-shortcuts") {
+                        PanelLabel(stringResource(R.string.app_panel_shortcuts))
+                    }
+                    items(shortcuts, key = { it.id }) { shortcut ->
+                        val label = (shortcut.shortLabel ?: shortcut.longLabel)?.toString().orEmpty()
+                        val icon = remember(shortcut.id, densityPx) {
+                            runCatching {
+                                victoriaApp.appRepository.shortcutIcon(shortcut, densityPx)
+                                    ?.toBitmap(ICON_PX, ICON_PX)?.asImageBitmap()
+                            }.getOrNull()
+                        }
+                        PanelRow(
+                            label = label,
+                            icon = icon,
+                            labelSizeSp = labelSizeSp,
+                            onClick = {
+                                victoriaApp.appRepository.startAppShortcut(shortcut)
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+
+                if (widgetLabels.isNotEmpty()) {
+                    item(key = "label-widgets") {
+                        PanelLabel(stringResource(R.string.app_panel_widgets))
+                    }
+                    items(widgetLabels, key = { it }) { widgetLabel ->
+                        PanelRow(
+                            label = widgetLabel,
+                            icon = null,
+                            labelSizeSp = labelSizeSp,
+                            leading = {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            // The existing picker owns allocating an id and running whatever
+                            // configuration the provider asks for, which is the part that is
+                            // easy to get wrong.
+                            onClick = { onOpenWidgetPicker() },
+                        )
+                    }
+                }
+
+                if (notifications.isEmpty() && shortcuts.isEmpty() && widgetLabels.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = stringResource(R.string.app_panel_empty),
+                            color = Color.White.copy(alpha = 0.55f),
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 26.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Header: the app, and the two controls that are not "launch". */
+@Composable
+private fun AppPanelHeader(
+    app: AppInfo,
+    clearableCount: Int,
+    onOpenApp: () -> Unit,
+    onDismiss: () -> Unit,
+    onClearAll: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(app = app, sizeDp = 36)
+        Spacer(Modifier.width(12.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onOpenApp() }
+        ) {
+            Text(
+                text = app.label,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(R.string.app_panel_tap_to_open),
+                color = Color.White.copy(alpha = 0.45f),
+                fontSize = 11.sp,
+            )
+        }
+        // Present only when there is something it can clear. A control that does nothing is
+        // worse than no control.
+        if (clearableCount > 0) {
+            Icon(
+                Icons.Filled.DeleteSweep,
+                contentDescription = stringResource(R.string.app_panel_clear_all),
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .clickable { onClearAll() }
+                    .padding(4.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = stringResource(R.string.app_panel_close),
+            tint = Color.White.copy(alpha = 0.8f),
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .clickable { onDismiss() }
+                .padding(4.dp),
+        )
+    }
+}
+
+@Composable
+private fun PanelLabel(text: String) {
+    Text(
+        text = text,
+        color = Color.White.copy(alpha = 0.45f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun PanelRow(
+    label: String,
+    icon: ImageBitmap?,
+    labelSizeSp: Int,
+    onClick: () -> Unit,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(14.dp))
+        } else if (icon != null) {
+            Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(14.dp))
+        }
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = labelSizeSp.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
