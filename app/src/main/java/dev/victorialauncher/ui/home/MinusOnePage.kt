@@ -153,6 +153,46 @@ private const val GRIP_ICON_DP = 17
 private const val MOVE_GRAB_DEFAULT = 0.5f
 
 /**
+ * Where a dropped entry can actually go without landing on top of something else.
+ *
+ * Free placement means a position is absolute, so it can be dropped straight through another
+ * entry and leave two widgets drawn over each other - which is not a layout anybody asked for
+ * and gives no way out of it, since the only controls are on top of each other.
+ *
+ * So the dropped position is a *wish*: the nearest position to it that is free. Downwards
+ * first, because that is where the finger was heading, and only then upwards - a drop that
+ * was refused in one direction and quietly taken in the other reads as the app changing its
+ * mind. Candidates are only ever the wish itself and the far side of something already there,
+ * so the answer is a place that is genuinely empty rather than a hair away from one.
+ *
+ * Pure, so the rule can be tested without a screen, a finger or a widget.
+ */
+fun resolveDropY(
+    desiredY: Int,
+    heightDp: Int,
+    occupied: List<IntRange>,
+    pageHeightDp: Int,
+    gapDp: Int,
+): Int {
+    if (pageHeightDp <= heightDp) return 0
+    val highest = pageHeightDp - heightDp
+
+    fun free(y: Int): Boolean =
+        y in 0..highest && occupied.none { y < it.last + gapDp && it.first < y + heightDp + gapDp }
+
+    // The wish first, then the gaps below, then the gaps above.
+    //
+    // Downwards is preferred over merely *nearest*, because nearest will happily send a widget
+    // the length of the page in the opposite direction to the one the finger was travelling.
+    // Someone dragging down onto a neighbour expects it to end up under that neighbour, which
+    // is also what "make room" means - not the thing vanishing above where it came from.
+    val below = occupied.map { it.last + 1 + gapDp }.filter { it in 0..highest }.sorted()
+    val above = occupied.map { it.first - heightDp - gapDp }.filter { it in 0..highest }.sorted()
+    return (listOf(desiredY) + below + above).firstOrNull { free(it) }
+        ?: desiredY.coerceIn(0, highest)
+}
+
+/**
  * Where a held entry lands when the finger is at [rootY].
  *
  * The held entry is lifted out of the count first, so it is never one of the ones it is being
@@ -407,15 +447,41 @@ private fun WidgetStackPage(
         return with(density) { entry.heightDp.dp.toPx() }
     }
 
-    /** The carried entry is put down where the finger left it, and stays there. */
+    /**
+     * The bands on the page already taken by everything except the carried entry, in dp.
+     *
+     * Read from where each entry was actually laid out rather than worked out from the list,
+     * because the list does not know how tall its entries are and does not know where the
+     * placed ones ended up. Placed entries get their own position; the rest get theirs from
+     * the flow they are packed into.
+     */
+    fun occupiedBands(exceptIndex: Int): List<IntRange> {
+        val out = mutableListOf<IntRange>()
+        entries.forEachIndexed { index, entry ->
+            if (index == exceptIndex) return@forEachIndexed
+            val top = entryTops[index] ?: return@forEachIndexed
+            val topDp = with(density) { (top - pageTopInWindow).toDp().value.toInt() }
+            out += topDp until (topDp + entry.heightDp)
+        }
+        return out
+    }
+
+    /** The carried entry is put down where the finger left it, if that is somewhere free. */
     fun releaseMove() {
         val from = liftedIndex
         val entry = from?.let { entries.getOrNull(it) }
         if (from != null && entry != null) {
-            val yDp = with(density) {
+            val wantedDp = with(density) {
                 (fingerRootY - pageTopInWindow - entryHeightPx(from) * grabFraction).toDp().value.toInt()
             }
-            onPlace(from, entry.xDp, yDp, pageSizeDp.first, pageSizeDp.second)
+            val landingDp = resolveDropY(
+                desiredY = wantedDp,
+                heightDp = entry.heightDp,
+                occupied = occupiedBands(from),
+                pageHeightDp = pageSizeDp.second,
+                gapDp = ENTRY_GAP_DP,
+            )
+            onPlace(from, entry.xDp, landingDp, pageSizeDp.first, pageSizeDp.second)
         }
         liftedIndex = null
         draggingIndex = null
