@@ -248,6 +248,9 @@ fun HomeScreen(
     onReorderHome: (newFavoriteKeys: List<String>, newWidgetPosition: Int) -> Unit,
     onCommitPadding: (PaddingSlot, Int) -> Unit,
     onFavoritesBoundsChanged: (topPx: Float, bottomPx: Float) -> Unit,
+    /** True when the page to the left of home has been given something to show. */
+    minusOneEnabled: Boolean,
+    onOpenMinusOne: () -> Unit,
     contentColor: Color,
     showFavoriteLabels: Boolean,
     alignment: HomeAlignment,
@@ -455,6 +458,32 @@ fun HomeScreen(
     // of asking for another one.
     var favBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
+    /**
+     * The empty band between the widget and the first app row, in window pixels.
+     *
+     * Measured rather than assumed, because "the gap" is wherever the widget happens to end and
+     * the padding happens to begin, and both of those are the user's to set. Reported like the
+     * favorites' bounds are, so it survives every relayout that moves them.
+     *
+     * Empty when there is no widget: the stack then starts at the top of the screen and there
+     * is no band under it, and treating the whole favourites list as one would make an ordinary
+     * swipe across a row open a page instead.
+     */
+    var gapBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+
+    val minusOneSwipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+
+    fun refreshGapBounds() {
+        val rowTop = favBounds?.first ?: return
+        val widget = displayItems.firstOrNull { it is HomeItem.Widget } ?: return
+        val key = measureKey(widget)
+        val top = (itemTops[key] ?: return) + (itemHeights[key] ?: return)
+        val current = gapBounds
+        if (current == null || abs(current.first - top) > 0.5f || abs(current.second - rowTop) > 0.5f) {
+            gapBounds = top to rowTop
+        }
+    }
+
     /** Recomputed after each row reports, against the list as it is now rather than as it was. */
     fun refreshFavBounds() {
         val first = displayItems.firstOrNull { it !is HomeItem.Widget } ?: return
@@ -467,11 +496,16 @@ fun HomeScreen(
         if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
             favBounds = top to bottom
         }
+        refreshGapBounds()
     }
 
     LaunchedEffect(favBounds) {
         val (top, bottom) = favBounds ?: return@LaunchedEffect
         onFavoritesBoundsChanged(top, bottom)
+    }
+
+    LaunchedEffect(favBounds) {
+        refreshGapBounds()
     }
 
     val peekPullPx = with(density) { 30.dp.toPx() }
@@ -585,6 +619,37 @@ fun HomeScreen(
             .fillMaxSize()
             .onSizeChanged { viewportHeight = it.height }
             .onGloballyPositioned { rootY = it.positionInWindow().y }
+            // A swipe right through the empty band under the widget opens the page to the left.
+            // Horizontal-only, so it cannot be confused with the vertical pull that peeks the
+            // shade or the swipe up that opens the app list, both of which own the vertical slop
+            // and both of which are still free to claim a drag that goes nowhere sideways.
+            // The down has to land in the band rather than the gesture being read wherever it
+            // ends: a drag that began on a row is a drag on that row.
+            .pointerInput(minusOneEnabled, gapBounds) {
+                if (!minusOneEnabled) return@pointerInput
+                val band = gapBounds ?: return@pointerInput
+                // Too narrow to aim at is treated as no band at all, rather than as a band that
+                // happens to be there: a gesture nobody can land is worse than no gesture.
+                if (band.second - band.first < MINUS_ONE_MIN_BAND_PX) return@pointerInput
+                // Plain locals, not state: this runs on every drag event of every gesture on
+                // this screen, and writing state there would recompose the home screen on each
+                // one. Keyed on the band, so a relayout that moves it restarts the detector.
+                var startedInBand = false
+                var travelled = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        startedInBand = rootY + offset.y in band.first..band.second
+                        travelled = 0f
+                    },
+                    onDragEnd = {
+                        if (startedInBand && travelled > minusOneSwipeThreshold) onOpenMinusOne()
+                    },
+                    onDragCancel = {},
+                ) { change, amount ->
+                    change.consume()
+                    travelled += amount
+                }
+            }
             .draggable(
                 orientation = Orientation.Vertical,
                 enabled = !editMode && liveSlot == null,
@@ -1777,6 +1842,15 @@ private fun handleReserve(dragHandle: Modifier?, sidePaddingDp: Int): Dp {
 private val STRIP_INSET = 56.dp
 
 private val MAX_CONTENT_WIDTH = 600.dp
+
+/**
+ * The gap has to be tall enough to aim at before a swipe in it means anything.
+ *
+ * With the paddings at their defaults there is barely a finger-width between the widget and the
+ * first row, and asking for a precise swipe in a band that narrow turns the gesture into a
+ * miss rather than a shorter gesture.
+ */
+private const val MINUS_ONE_MIN_BAND_PX = 96f
 
 /** Which side a capped stack sits against, so it stays where the rows are aligned. */
 private fun HomeAlignment.wideScreenAlignment(): Alignment = when (this) {

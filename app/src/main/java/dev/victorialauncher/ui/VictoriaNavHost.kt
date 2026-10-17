@@ -42,6 +42,9 @@ import dev.victorialauncher.TypedKey
 import dev.victorialauncher.VictoriaApp
 import android.widget.Toast
 import dev.victorialauncher.data.IconShape
+import dev.victorialauncher.data.MINUS_ONE_NEW_WIDGET_HEIGHT_DP
+import dev.victorialauncher.data.MinusOneEntry
+import dev.victorialauncher.data.MinusOnePage
 import dev.victorialauncher.data.AppFont
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.EntryKind
@@ -280,6 +283,7 @@ fun VictoriaNavHost(
     }
 
     val hiddenApps by app.prefs.hiddenApps.collectAsState(initial = emptySet())
+    val minusOne by app.prefs.minusOne.collectAsState(initial = MinusOnePage())
     val favoriteKeys by app.prefs.favorites.collectAsState(initial = emptyList())
     val frequentExcluded by app.prefs.frequentExcluded.collectAsState(initial = emptySet())
     val favoritesEverSet by app.prefs.favoritesEverSet.collectAsState(initial = true)
@@ -592,11 +596,26 @@ fun VictoriaNavHost(
         pendingIconTarget = null
     }
 
-    val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    // Which surface asked for the widget. The picker is one screen and returns one id, and the two
+// callers mean different things by it: the home screen's slot takes it as another page in its
+// own pager, the left-hand page takes it as another row in its stack.
+var minusOneWidgetPicker by remember { mutableStateOf(false) }
+val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val toMinusOne = minusOneWidgetPicker
+        minusOneWidgetPicker = false
         if (result.resultCode == RESULT_OK) {
             val id = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
             // Appended rather than replacing: picking a widget now adds a page.
-            if (id != -1) scope.launch { app.prefs.addWidgetId(id) }
+            if (id != -1) scope.launch {
+                if (toMinusOne) {
+                    app.prefs.setMinusOne(
+                        minusOne.mode,
+                        minusOne.entries + MinusOneEntry.Widget(id, MINUS_ONE_NEW_WIDGET_HEIGHT_DP),
+                    )
+                } else {
+                    app.prefs.addWidgetId(id)
+                }
+            }
         }
     }
 
@@ -605,6 +624,7 @@ fun VictoriaNavHost(
             onAddWidget = { focus ->
                 // Carries which app asked, so the picker can put that app's widgets at the top
                 // rather than opening on the whole device catalogue every time.
+                minusOneWidgetPicker = false
                 widgetPickerLauncher.launch(
                     Intent(context, WidgetPickerActivity::class.java).apply {
                         if (focus != null) putExtra(EXTRA_FOCUS_PACKAGE, focus)
@@ -688,6 +708,10 @@ fun VictoriaNavHost(
                 widgetPosition = widgetPosition,
                 widgetHeightDp = widgetHeightDp,
                 widgetActions = widgetActions,
+                onAddWidgetToMinusOne = {
+                    minusOneWidgetPicker = true
+                    widgetActions.onAddWidget(null)
+                },
                 launchCounts = launchCounts,
                 // Both flows start at a value that shows nothing, so the dialog can't flash
                 // before the stored answer arrives. A legacy install is stamped 0 and never
@@ -964,6 +988,15 @@ fun VictoriaNavHost(
                 frequentExcludedVisible = favoritesSource == FavoritesSource.FREQUENT,
                 onOpenFrequentExcluded = { navController.navigate("settings/frequentexcluded") },
                 onOpenFavorites = { navController.navigate("favorites") },
+                minusOneMode = minusOne.mode,
+                // Turning the page off drops whatever was on it: setting it up again should be
+                // a deliberate act, not a page that quietly reappeared with a stack nobody was
+                // told had been kept.
+                onSetMinusOneMode = { mode ->
+                    scope.launch {
+                        app.prefs.setMinusOne(mode, if (mode == minusOne.mode) minusOne.entries else emptyList())
+                    }
+                },
                 onOpenNotificationSettings = {
                     context.startActivity(
                         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)

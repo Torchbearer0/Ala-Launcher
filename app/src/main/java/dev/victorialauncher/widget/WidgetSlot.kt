@@ -140,7 +140,7 @@ fun WidgetSlot(
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 val id = widgetIds[page]
-                WidgetPage(widgetId = id, onPressAndHold = { x, y -> openMenu(id, x, y) })
+                HostedWidget(widgetId = id, onPressAndHold = { x, y -> openMenu(id, x, y) })
             }
 
             if (widgetIds.size > 1) {
@@ -230,9 +230,18 @@ fun WidgetSlot(
     }
 }
 
-/** One hosted widget. [onLongPress] carries the press position in this page's local pixels. */
+/**
+ * One hosted widget, at whatever size its parent gives it.
+ *
+ * Shared with the page to the left of home rather than written a second time: everything that
+ * matters here is about surviving a third-party provider — the createView guard, passing the
+ * widget its existing options rather than a blank Bundle, never calling setAppWidget on update —
+ * and none of it is worth maintaining twice.
+ *
+ * [onPressAndHold] carries the press position in this widget's local pixels.
+ */
 @Composable
-private fun WidgetPage(widgetId: Int, onPressAndHold: (x: Float, y: Float) -> Unit) {
+internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as VictoriaApp
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }

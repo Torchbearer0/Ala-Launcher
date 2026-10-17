@@ -105,6 +105,8 @@ class Prefs(private val context: Context) {
         val FREQUENT_EXCLUDED = stringSetPreferencesKey(PREF_FREQUENT_EXCLUDED)
         val FAVORITES = stringPreferencesKey(PREF_FAVORITES)
         val FOLDERS = stringPreferencesKey(PREF_FOLDERS)
+        val MINUS_ONE_MODE = stringPreferencesKey("minus_one_mode")
+        val MINUS_ONE_ENTRIES = stringPreferencesKey("minus_one_entries")
         val NAME_OVERRIDES = stringPreferencesKey(PREF_NAME_OVERRIDES)
         val ICON_OVERRIDES = stringPreferencesKey(PREF_ICON_OVERRIDES)
         val ICON_SIZE_DP = intPreferencesKey("icon_size_dp")
@@ -334,6 +336,21 @@ class Prefs(private val context: Context) {
 
     val folders: Flow<List<Folder>> =
         data.map { pref -> foldersFromJson(pref[Keys.FOLDERS]) }.distinctUntilChanged()
+
+    /**
+     * What the page to the left of the home screen shows, and the stack it holds.
+     *
+     * Read as one pair because they are one decision: a page in widget mode with nothing on it
+     * and a page turned off are the same empty screen, and only the mode says which.
+     */
+    val minusOne: Flow<MinusOnePage> = data.map { pref ->
+        MinusOnePage(
+            mode = pref[Keys.MINUS_ONE_MODE]
+                ?.let { stored -> MinusOneMode.entries.firstOrNull { it.name == stored } }
+                ?: MinusOneMode.OFF,
+            entries = minusOneEntriesFromJson(pref[Keys.MINUS_ONE_ENTRIES]),
+        )
+    }.distinctUntilChanged()
 
     val nameOverrides: Flow<Map<String, String>> =
         data.map { pref -> jsonToMap(pref[Keys.NAME_OVERRIDES]) }.distinctUntilChanged()
@@ -1247,6 +1264,27 @@ class Prefs(private val context: Context) {
 
     suspend fun setCornerButtonSwipe(componentKey: String?) =
         setCornerGesture(Keys.CORNER_BUTTON_SWIPE_KEY, componentKey)
+
+    /**
+     * Mode and stack written in one edit.
+     *
+     * One edit rather than two setters because turning the page off and emptying it are two
+     * halves of one change, and two writes leave a moment where the page is off but still holds
+     * a stack — which comes back on if it is turned on again.
+     */
+    suspend fun setMinusOne(mode: MinusOneMode, entries: List<MinusOneEntry>) {
+        context.dataStore.edit { pref ->
+            if (mode == MinusOneMode.OFF) {
+                // Turning the page off keeps nothing. Turning it back on should be a page that
+                // has been set up again, not one silently restored behind the setting.
+                pref.remove(Keys.MINUS_ONE_ENTRIES)
+                pref[Keys.MINUS_ONE_MODE] = MinusOneMode.OFF.name
+            } else {
+                pref[Keys.MINUS_ONE_ENTRIES] = minusOneEntriesToJson(entries)
+                pref[Keys.MINUS_ONE_MODE] = mode.name
+            }
+        }
+    }
 
     /**
      * A blank key means the gesture is unbound, and removing it is how that is said.

@@ -10,6 +10,7 @@ import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDecay
@@ -20,6 +21,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -74,6 +76,10 @@ import dev.victorialauncher.data.Folder
 import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.QuickLaunchSlot
 import dev.victorialauncher.data.PaddingSlot
+import dev.victorialauncher.data.MinusOneEntry
+import dev.victorialauncher.data.MinusOneMode
+import dev.victorialauncher.data.MinusOnePage
+import dev.victorialauncher.data.withHeight
 import dev.victorialauncher.data.folderToken
 
 import dev.victorialauncher.media.NotificationBus
@@ -176,6 +182,12 @@ fun HomeRoute(
     widgetPosition: Int,
     widgetHeightDp: Int,
     widgetActions: WidgetSlotActions,
+    /**
+     * Opens the same picker as [widgetActions] but marks the result as belonging to the page to
+     * the left, which is the difference between a new row in its stack and a new page in the
+     * home screen's own pager.
+     */
+    onAddWidgetToMinusOne: () -> Unit,
     launchCounts: Map<String, Int>,
     showWelcome: Boolean,
     onWelcomeDismissed: () -> Unit,
@@ -286,6 +298,8 @@ fun HomeRoute(
     // Which app's panel the swipe opened, or null. Held by the destination because the strip
     // and the edge zones are drawn here, after HomeScreen, and would cover a panel drawn there.
     var panelFor by remember { mutableStateOf<Triple<AppInfo, Dp, Dp>?>(null) }
+    val minusOne by app.prefs.minusOne.collectAsState(initial = MinusOnePage())
+    var minusOneVisible by remember { mutableStateOf(false) }
     val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = false)
     val notifications by NotificationBus.notifications.collectAsState()
 
@@ -688,6 +702,11 @@ fun HomeRoute(
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
                 MenuBlur.anyOpen -> 10.dp
+                // Only in widget mode: the page is a stack of widgets over the wallpaper, and
+                // a clock face or a calendar drawn straight onto a busy background is hard to
+                // read and looks pasted on. The Discover page is one card on the wallpaper and
+                // does not need it — blurring there would only grey out the card for nothing.
+                minusOneVisible && minusOne.mode == MinusOneMode.WIDGETS -> 14.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
@@ -876,6 +895,8 @@ fun HomeRoute(
                 },
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
+                minusOneEnabled = minusOne.mode != MinusOneMode.OFF,
+                onOpenMinusOne = { minusOneVisible = true },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -1093,6 +1114,83 @@ fun HomeRoute(
                 iconSide = settings.iconSide,
             )
         }
+
+        // The page to the left of home. Kept composed and unplaced when hidden, the same way the
+        // drawer is, so opening it is not a first composition of a screenful of widgets. Slides
+        // in from the left rather than fading, because it came from a swipe to the left and
+        // leaving by the same gesture reads as the same journey in reverse.
+        val minusOneProgress by animateFloatAsState(
+            targetValue = if (minusOneVisible) 1f else 0f,
+            animationSpec = tween(260, easing = FastOutSlowInEasing),
+            label = "minusOneProgress",
+        )
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = minusOneProgress
+                    // A layer rather than an offset modifier because it can see its own size,
+                    // and the page's is only known after layout — which is exactly what an
+                    // unplaced overlay measures as zero.
+                    translationX = -(1f - minusOneProgress) * size.width
+                }
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    if (minusOneVisible) {
+                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                    } else {
+                        layout(0, 0) {}
+                    }
+                }
+                // Swiping right again goes back, which is the gesture that brought the page in.
+                // Only once it has clearly travelled right, so a scroll inside the page — which
+                // is vertical — and a drag on a divider never close it by accident.
+                .pointerInput(Unit) {
+                    if (!minusOneVisible) return@pointerInput
+                    var travelled = 0f
+                    detectHorizontalDragGestures(
+                        onDragEnd = { if (travelled > with(density) { 72.dp.toPx() }) minusOneVisible = false },
+                        onDragCancel = { travelled = 0f },
+                    ) { change, amount ->
+                        change.consume()
+                        travelled += amount
+                    }
+                },
+        ) {
+            fun updateEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
+                scope.launch { app.prefs.setMinusOne(minusOne.mode, transform(minusOne.entries)) }
+            }
+
+            MinusOnePage(
+                page = minusOne,
+                appsByKey = appsByKey,
+                contentColor = settings.contentColor,
+                onAddWidget = onAddWidgetToMinusOne,
+                onResize = { index, heightDp ->
+                    updateEntries { entries ->
+                        val entry = entries.getOrNull(index) ?: return@updateEntries entries
+                        entries.toMutableList().apply { set(index, entry.withHeight(heightDp)) }
+                    }
+                },
+                onRemove = { index ->
+                    val entry = minusOne.entries.getOrNull(index) ?: return@MinusOnePage
+                    // The host id has to be released, not just forgotten: left allocated, the
+                    // provider keeps broadcasting updates to a widget nobody can see.
+                    if (entry is MinusOneEntry.Widget && entry.widgetId > 0) {
+                        runCatching { app.widgetHost.deleteAppWidgetId(entry.widgetId) }
+                    }
+                    updateEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
+                },
+                onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
+                onAppInfo = { id -> widgetActions.onAppInfo(id) },
+                onLaunch = { launchEntry(it) },
+                onOpenSettings = { onNavigate("settings") },
+            )
+        }
+
+        // Back leaves the page rather than the launcher. Without this the page is a place the
+        // only way out of is a swipe in one exact direction, and BACK — which the user has just
+        // been pressing to get out of everything else on this screen — would close the app.
+        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
 
         // Above everything else, and last, so a pull that opens it cannot be mistaken for a
         // pull that opened the list underneath. Only drawn while open: keeping a full-screen
