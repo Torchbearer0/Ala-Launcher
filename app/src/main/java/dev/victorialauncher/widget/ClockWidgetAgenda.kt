@@ -30,7 +30,16 @@ import java.util.concurrent.TimeUnit
 object ClockWidgetAgenda {
 
     /** Title and when, already in the form the widget draws. */
-    data class Entry(val text: String)
+    data class Entry(
+        val text: String,
+        /**
+         * Just the time, for where the label is drawn as an icon rather than a word.
+         *
+         * Null for anything that is not an alarm. "Alarm 7:00 AM" is a word doing the work
+         * of a picture, and the picture is drawn beside it.
+         */
+        val time: String? = null,
+    )
 
     fun hasCalendarPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) ==
@@ -87,11 +96,10 @@ object ClockWidgetAgenda {
     fun nextAlarm(context: Context): Entry? = runCatching {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return null
         val next = manager.nextAlarmClock ?: return null
+        val time = formatClock(context, next.triggerTime)
         Entry(
-            context.getString(
-                R.string.widget_clock_alarm_at,
-                formatClock(context, next.triggerTime),
-            ),
+            text = context.getString(R.string.widget_clock_alarm_at, time),
+            time = time,
         )
     }.getOrNull()
 

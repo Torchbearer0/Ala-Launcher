@@ -79,6 +79,8 @@ class ClockWidgetProvider : AppWidgetProvider() {
             ClockWidgetWeather.WeatherGlyph.DRIZZLE -> R.drawable.ic_weather_drizzle
             ClockWidgetWeather.WeatherGlyph.RAIN -> R.drawable.ic_weather_rain
             ClockWidgetWeather.WeatherGlyph.SNOW -> R.drawable.ic_weather_snow
+            ClockWidgetWeather.WeatherGlyph.HAIL -> R.drawable.ic_weather_hail
+            ClockWidgetWeather.WeatherGlyph.WIND -> R.drawable.ic_weather_wind
             ClockWidgetWeather.WeatherGlyph.THUNDERSTORM -> R.drawable.ic_weather_thunderstorm
             // No picture for wording this does not recognise. The temperature still shows.
             ClockWidgetWeather.WeatherGlyph.UNKNOWN -> null
@@ -181,7 +183,68 @@ class ClockWidgetProvider : AppWidgetProvider() {
                             )
                         },
                     )
+
+                    // The place, when one was named. This is a label and not a lookup: the
+                    // numbers are whatever the weather app last sent, and naming the row is
+                    // how you tell at a glance whether it was sending the place you meant.
+                    val place = config.weatherLocation
+                    if (place != null) {
+                        setTextViewText(
+                            R.id.widget_weather,
+                            context.getString(
+                                R.string.widget_clock_weather_reading,
+                                place,
+                                ClockWidgetWeather.degrees(weather, config.weatherFahrenheit),
+                            ),
+                        )
+                    }
+
+                    // The whole weather column opens the weather app, not just the glyph.
+                    // One target rather than three: a tap on the degrees, on the words and
+                    // on the gap beside them all meaning the same thing is what makes this
+                    // read as a row rather than as three separate labels.
+                    val weatherApp = config.weatherPackage
+                    if (weatherApp != null) {
+                        val intent = context.packageManager.getLaunchIntentForPackage(weatherApp)
+                        if (intent != null) {
+                            setOnClickPendingIntent(
+                                R.id.widget_weather_column,
+                                open(context, intent, widgetId * 8 + 5),
+                            )
+                        }
+                    }
                 }
+
+                // The condition in words, on the second line of the weather column.
+                //
+                // Today's, in the sender's own words, and not the forecast: the day a
+                // forecast arrives in is a bare number in whatever numbering the sending app
+                // uses, and a lookup written against the wrong table produces a row with a
+                // temperature and nothing under it - which looks like a broken feature rather
+                // than a sender whose numbering we do not know. Today's condition arrives as
+                // text, is what the drawing beside it describes, and is what anyone reading
+                // the widget actually wanted to know.
+                val condition = weather?.condition.orEmpty()
+                if (condition.isBlank()) {
+                    setViewVisibility(R.id.widget_forecast_text, View.GONE)
+                } else {
+                    setViewVisibility(R.id.widget_forecast_text, View.VISIBLE)
+                    setTextViewText(R.id.widget_forecast_text, condition)
+                    setTextColor(
+                        R.id.widget_forecast_text,
+                        config.colorAt(config.weatherOpacity),
+                    )
+                }
+
+                // The rule between the two columns, and only while both have something in
+                // them. A bar drawn beside an empty column is a divider dividing nothing, and
+                // it is the one thing on this widget that would be there for no reason.
+                val leftHasContent = config.showAlarm && ClockWidgetAgenda.nextAlarm(context) != null
+                val rightHasContent = weather != null
+                setViewVisibility(
+                    R.id.widget_column_rule,
+                    if (leftHasContent && rightHasContent) View.VISIBLE else View.GONE,
+                )
 
                 // A count and nothing else, for the same reason the badges carry no text: what
                 // a notification says is its own business and not the home screen's.
@@ -237,14 +300,25 @@ class ClockWidgetProvider : AppWidgetProvider() {
 
                 val alarm = if (config.showAlarm) ClockWidgetAgenda.nextAlarm(context) else null
                 if (alarm == null) {
-                    setViewVisibility(R.id.widget_alarm, View.GONE)
+                    setViewVisibility(R.id.widget_alarm_row, View.GONE)
                 } else {
-                    setViewVisibility(R.id.widget_alarm, View.VISIBLE)
-                    setTextViewText(R.id.widget_alarm, alarm.text)
+                    setViewVisibility(R.id.widget_alarm_row, View.VISIBLE)
+                    // The bare time, with the bell beside it. The word is still what the row
+                    // is called out as, because the glyph carries no words at all.
+                    setTextViewText(R.id.widget_alarm, alarm.time ?: alarm.text)
+                    setContentDescription(
+                        R.id.widget_alarm,
+                        context.getString(R.string.widget_clock_alarm_at, alarm.time ?: alarm.text),
+                    )
                     setTextViewTextSize(R.id.widget_alarm, TypedValue.COMPLEX_UNIT_SP, config.agendaSizeSp.toFloat())
                     setTextColor(R.id.widget_alarm, config.colorAt(config.agendaOpacity))
+                    setInt(
+                        R.id.widget_alarm_icon,
+                        "setColorFilter",
+                        config.colorAt(config.agendaOpacity),
+                    )
                     setOnClickPendingIntent(
-                        R.id.widget_alarm,
+                        R.id.widget_alarm_row,
                         open(context, clockIntent(context), widgetId * 8 + 7),
                     )
                 }

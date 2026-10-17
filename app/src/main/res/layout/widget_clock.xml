@@ -1,103 +1,196 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The launcher's own clock. Two tap targets on purpose: the time opens the clock app and the
-  date opens the calendar, which is what each of them is for.
+  The launcher's own clock.
 
-  Both fill the width, so a tap anywhere along a row lands on something rather than only on the
-  characters themselves. The battery is a plain TextView and not a third clock: it is the one
-  line here that does not come from the time, so it is written out on each draw. Their height is whatever the chosen size needs: sharing the slot's
-  height between them by weight instead meant a size larger than its share was cut off, and the
-  size is the one thing here that is asked for outright.
+  Typography is the whole of this layout. There is one large size, the time, and one small
+  size for everything else, and nothing between them: an earlier version had four sizes in a
+  column and each row wanted to be the one you read first. A row of secondary text at one
+  size reads as a single line of fact whatever it contains, and the time is the only thing
+  here that is allowed to shout.
 
-  TextClock rather than a label this app keeps updating: it ticks on its own inside the host,
-  follows the system's 12- and 24-hour setting, and localizes both formats without being told.
-  No autosizing: it makes a TextView ignore the size it is given, which is how the size
-  setting came to do nothing at all.
+  Below the time, two columns split by a rule. The left is what today is - the date, and the
+  next alarm under it. The right is what the sky is doing - the degrees, and what it is
+  doing tomorrow underneath. A rule rather than a gap, because a gap cannot say where one
+  column stops and the next begins.
+
+  Both TextClocks rather than labels this app keeps updating: they tick inside the host on
+  their own, follow the system's 12- and 24-hour setting, and localize both formats without
+  being told. No autosizing anywhere: it makes a TextView ignore the size it is given, which
+  is how the size setting came to do nothing at all.
+
+  The whole row is baseline-aligned so the two columns sit on one line rather than two
+  blocks that happen to start at the same top edge - which looks aligned until the text on
+  one side wraps or changes size, and then does not.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center_vertical"
-    android:paddingStart="4dp"
-    android:paddingEnd="4dp">
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp">
 
     <TextClock
         android:id="@+id/widget_time"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:format12Hour="h:mm"
         android:format24Hour="HH:mm"
         android:textColor="@color/widget_clock_text"
-        android:textSize="44sp"
+        android:textSize="46sp"
         android:maxLines="1"
         android:gravity="start"
         android:shadowColor="#80000000"
         android:shadowDx="0"
         android:shadowDy="1"
-        android:shadowRadius="4"
+        android:shadowRadius="6"
         android:contentDescription="@string/widget_clock_time" />
 
-    <TextClock
-        android:id="@+id/widget_date"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:format12Hour="EEEE, d MMMM"
-        android:format24Hour="EEEE, d MMMM"
-        android:textColor="@color/widget_clock_text"
-        android:textSize="16sp"
-        android:maxLines="1"
-        android:gravity="start"
-        android:shadowColor="#80000000"
-        android:shadowDx="0"
-        android:shadowDy="1"
-        android:shadowRadius="4"
-        android:contentDescription="@string/widget_clock_date" />
-
-    <!--
-        Icon and temperature together. The glyph is what says "rain" at a glance across the
-        room; the degrees are the part anyone actually reads. The words the weather app sent
-        are kept for the content description rather than drawn, because a row reading "21°C
-        Partly cloudy" under a part-cloudy glyph says the same thing twice.
-    -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:baselineAligned="true">
 
-        <ImageView
-            android:id="@+id/widget_weather_icon"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginEnd="6dp"
+        <!-- Today. Takes the space it needs; the weather column takes the rest. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginEnd="12dp">
+
+            <TextClock
+                android:id="@+id/widget_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:format12Hour="EEEE, d MMMM"
+                android:format24Hour="EEEE, d MMMM"
+                android:textColor="@color/widget_clock_text"
+                android:textSize="14sp"
+                android:maxLines="1"
+                android:gravity="start"
+                android:shadowColor="#80000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
+                android:contentDescription="@string/widget_clock_date" />
+
+            <LinearLayout
+                android:id="@+id/widget_alarm_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/widget_alarm_icon"
+                    android:layout_width="13dp"
+                    android:layout_height="13dp"
+                    android:layout_marginEnd="5dp"
+                    android:src="@drawable/ic_clock_alarm"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/widget_alarm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/widget_clock_text"
+                    android:textSize="14sp"
+                    android:alpha="0.85"
+                    android:maxLines="1"
+                    android:shadowColor="#80000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="4"
+                    android:contentDescription="@string/widget_clock_alarm" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- The rule. Faded rather than solid: it is punctuation, not content.
+
+             A TextView rather than a plain View because a RemoteViews layout is inflated in
+             the host process against a whitelist of classes, and android.view.View is not on
+             it. An empty TextView with a background draws the same one-pixel line and is
+             allowed to exist there; a View is refused outright and the whole widget fails
+             to inflate with "couldn't add widget". -->
+        <TextView
+            android:id="@+id/widget_column_rule"
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="12dp"
+            android:background="@color/widget_clock_text"
+            android:alpha="0.25"
+            android:text=""
             android:visibility="gone"
             android:contentDescription="@null" />
 
-        <TextView
-            android:id="@+id/widget_weather"
+        <!-- The sky. Clickable as a whole so the degrees and the words open the same thing. -->
+        <LinearLayout
+            android:id="@+id/widget_weather_column"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="@color/widget_clock_text"
-            android:textSize="14sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:visibility="gone"
-            android:gravity="start"
-            android:shadowColor="#80000000"
-            android:shadowDx="0"
-            android:shadowDy="1"
-            android:shadowRadius="4" />
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/widget_weather_icon"
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
+                    android:layout_marginEnd="6dp"
+                    android:visibility="gone"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/widget_weather"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/widget_clock_text"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:visibility="gone"
+                    android:gravity="start"
+                    android:shadowColor="#80000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="4" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_forecast_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/widget_clock_text"
+                android:textSize="14sp"
+                android:alpha="0.85"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:visibility="gone"
+                android:gravity="start"
+                android:shadowColor="#80000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
+                android:contentDescription="@string/widget_clock_weather_forecast" />
+        </LinearLayout>
     </LinearLayout>
 
     <TextView
         android:id="@+id/widget_notifications"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
+        android:alpha="0.85"
         android:maxLines="1"
         android:visibility="gone"
         android:gravity="start"
@@ -109,10 +202,11 @@
 
     <TextView
         android:id="@+id/widget_event_1"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
+        android:alpha="0.85"
         android:maxLines="1"
         android:ellipsize="end"
         android:visibility="gone"
@@ -125,10 +219,11 @@
 
     <TextView
         android:id="@+id/widget_event_2"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
+        android:alpha="0.85"
         android:maxLines="1"
         android:ellipsize="end"
         android:visibility="gone"
@@ -141,26 +236,11 @@
 
     <TextView
         android:id="@+id/widget_event_3"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:visibility="gone"
-        android:gravity="start"
-        android:shadowColor="#80000000"
-        android:shadowDx="0"
-        android:shadowDy="1"
-        android:shadowRadius="4"
-        android:contentDescription="@string/widget_clock_agenda" />
-
-    <TextView
-        android:id="@+id/widget_alarm"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="@color/widget_clock_text"
-        android:textSize="14sp"
+        android:alpha="0.85"
         android:maxLines="1"
         android:ellipsize="end"
         android:visibility="gone"
@@ -173,10 +253,11 @@
 
     <TextView
         android:id="@+id/widget_battery"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
+        android:alpha="0.85"
         android:maxLines="1"
         android:visibility="gone"
         android:gravity="start"
