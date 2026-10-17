@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -66,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import androidx.compose.ui.graphics.graphicsLayer
@@ -142,6 +144,15 @@ private const val GRIP_SIZE_DP = 30
 private const val GRIP_ICON_DP = 17
 
 /**
+ * Where a drag is taken to have hold, for a shortcut.
+ *
+ * A hosted widget reports its own grab point, because the layout knows it. A shortcut is drawn
+ * by this file, so it cannot know it any better than this without another layout pass, and a
+ * card taken hold of anywhere reads the same as one taken hold of in the middle.
+ */
+private const val MOVE_GRAB_DEFAULT = 0.5f
+
+/**
  * Where a held entry lands when the finger is at [rootY].
  *
  * The held entry is lifted out of the count first, so it is never one of the ones it is being
@@ -185,6 +196,14 @@ fun MinusOnePage(
     onRemove: (index: Int) -> Unit,
     /** Reorders the stack: a held entry dragged past a neighbour moves there. */
     onMove: (from: Int, to: Int) -> Unit,
+    /**
+     * Puts an entry where it was dropped, in dp on the page.
+     *
+     * The page width and height come with it because a position has to be clamped against
+     * something: stored unclamped, a widget dragged past the bottom comes back invisible, with
+     * nothing on the page to say where it went.
+     */
+    onPlace: (index: Int, xDp: Int, yDp: Int, pageWidthDp: Int, pageHeightDp: Int) -> Unit,
     onWidgetSettings: (widgetId: Int) -> Unit,
     onAppInfo: (widgetId: Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
@@ -212,6 +231,7 @@ fun MinusOnePage(
             onResize = onResize,
             onRemove = onRemove,
             onMove = onMove,
+            onPlace = onPlace,
             onWidgetSettings = onWidgetSettings,
             onAppInfo = onAppInfo,
             onLaunch = onLaunch,
@@ -289,6 +309,14 @@ private fun WidgetStackPage(
     onRemove: (index: Int) -> Unit,
     /** Reorders the stack: a held entry dragged past a neighbour moves there. */
     onMove: (from: Int, to: Int) -> Unit,
+    /**
+     * Puts an entry where it was dropped, in dp on the page.
+     *
+     * The page width and height come with it because a position has to be clamped against
+     * something: stored unclamped, a widget dragged past the bottom comes back invisible, with
+     * nothing on the page to say where it went.
+     */
+    onPlace: (index: Int, xDp: Int, yDp: Int, pageWidthDp: Int, pageHeightDp: Int) -> Unit,
     onWidgetSettings: (widgetId: Int) -> Unit,
     onAppInfo: (widgetId: Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
@@ -356,26 +384,72 @@ private fun WidgetStackPage(
         return top + with(density) { entry.heightDp.dp.toPx() } / 2f
     }
 
-    // The held entry follows the finger, and everything else gets out of its way.
+    // The entry being carried, and where the finger is while carrying it. Kept apart from the
+    // entry's own box on purpose: a drag reported as a position inside the widget can never go
+    // above that widget's top edge, so a lower entry could be dragged down past its neighbour
+    // but never up - which is exactly how it behaved. The entry is lifted out of the flow and
+    // drawn under the finger, so the finger can go anywhere on the page in either direction.
+    var liftedIndex by remember { mutableStateOf<Int?>(null) }
+    var fingerRootY by remember { mutableFloatStateOf(0f) }
+
+    /** Where the finger grabbed it, as a fraction down its own height. Keeps it under the finger. */
+    var grabFraction by remember { mutableFloatStateOf(0.5f) }
+
+    /** Where the page itself sits in the window, so a drop can be turned into a position on it. */
+    var pageTopInWindow by remember { mutableFloatStateOf(0f) }
+
+    /** The page's own size in dp, which is what a position is clamped against. */
+    var pageSizeDp by remember { mutableStateOf(0 to 0) }
+
+    /** How tall an entry is in pixels, or zero if it is gone. */
+    fun entryHeightPx(index: Int): Float {
+        val entry = entries.getOrNull(index) ?: return 0f
+        return with(density) { entry.heightDp.dp.toPx() }
+    }
+
+    /** The carried entry is put down where the finger left it, and stays there. */
+    fun releaseMove() {
+        val from = liftedIndex
+        val entry = from?.let { entries.getOrNull(it) }
+        if (from != null && entry != null) {
+            val yDp = with(density) {
+                (fingerRootY - pageTopInWindow - entryHeightPx(from) * grabFraction).toDp().value.toInt()
+            }
+            onPlace(from, entry.xDp, yDp, pageSizeDp.first, pageSizeDp.second)
+        }
+        liftedIndex = null
+        draggingIndex = null
+        heldIndex = null
+    }
+
+    /** The held entry follows the finger, and everything else gets out of its way. */
     fun moveTo(rootY: Float) {
-        val from = heldIndex ?: return
+        val from = liftedIndex ?: return
+        fingerRootY = rootY
         if (entries.size < 2) return
         val to = dragTargetIndex(from, ::centreY, rootY, entries.lastIndex)
         if (to == from) return
         onMove(from, to)
         heldIndex = to
         draggingIndex = to
+        liftedIndex = to
         // Arranging follows the entry rather than the slot. Left on the old index, the handles
         // and the cross would stay behind on whichever entry had been sitting there.
         onEditingChange(to)
     }
 
-    fun releaseMove() {
-        heldIndex = null
-        draggingIndex = null
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // Where the page is in the window and how big it is: a widget dropped at a point on
+            // the screen becomes a position on the page, and that needs both.
+            .onGloballyPositioned {
+                pageTopInWindow = it.positionInWindow().y
+                pageSizeDp = with(density) {
+                    it.size.width.toDp().value.toInt() to it.size.height.toDp().value.toInt()
+                }
+            },
+    ) {
         // Its own surface, so the page is a place rather than widgets floating over the home
         // screen it was reached from. The gradient rather than a flat wash so the top is a little
         // heavier than the bottom: content sits under the top, and a flat scrim leaves the middle
@@ -421,6 +495,12 @@ private fun WidgetStackPage(
         ) {
         entries.forEachIndexed { index, entry ->
             val editing = editingIndex == index
+            // An entry the user has put somewhere is drawn by the overlay below, not packed
+            // into the flow. Packing it as well would put it in two places at once; leaving it
+            // in the flow would take its slot with it and the space left behind would close up,
+            // which is the one thing free placement is for.
+            val carried = liftedIndex == index
+            if (entry.isPlaced && !carried) return@forEachIndexed
             Box(
                 modifier = Modifier
                     // A width of 0 means fill what is left, which in a wrapping row means the
@@ -436,16 +516,23 @@ private fun WidgetStackPage(
                     // one is the user holding it in edit mode.
                     .padding(vertical = 4.dp)
                     .graphicsLayer {
-                        if (editing) {
+                        if (carried) {
+                            // Carried. Drawn where the finger is rather than where the flow put
+                            // it, so it can be taken anywhere on the page. The grab point travels
+                            // with it, so a widget taken hold of near its top edge stays there
+                            // instead of jumping so its middle is under the finger.
+                            val slotTop = entryTops[index] ?: 0f
+                            val h = with(density) { entry.heightDp.dp.toPx() }
+                            translationY = fingerRootY - slotTop - h * grabFraction
+                            scaleX = 1.04f
+                            scaleY = 1.04f
+                            shadowElevation = 18.dp.toPx()
+                        } else if (editing) {
                             scaleX = 1.02f
                             scaleY = 1.02f
-                        } else if (draggingIndex == index) {
-                            scaleX = 1.03f
-                            scaleY = 1.03f
-                            alpha = 0.92f
                         }
                     }
-                    .zIndex(if (editing || draggingIndex == index) 1f else 0f),
+                    .zIndex(if (carried) 3f else if (editing) 1f else 0f),
             ) {
                 EntryBody(
                     entry = entry,
@@ -464,9 +551,11 @@ private fun WidgetStackPage(
                     onDragMove = if (editing) { { rootY -> moveTo(rootY) } } else null,
                     onDragEnd = if (editing) { { releaseMove() } } else null,
                     onDragStart = if (editing) {
-                        {
+                        { fraction ->
                             heldIndex = index
                             draggingIndex = index
+                            liftedIndex = index
+                            grabFraction = fraction
                         }
                     } else null,
                 )
@@ -602,6 +691,55 @@ private fun WidgetStackPage(
         }
         }
 
+        // Everything the user has placed by hand, drawn at the coordinates it was dropped at.
+        // Outside the scrolling column on purpose: a position is a place on the page, not a
+        // place in a list, and putting this inside the flow would make it scroll away and would
+        // mean the empty space it leaves could never be measured against anything.
+        if (entries.any { it.isPlaced }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+            ) {
+                entries.forEachIndexed { index, entry ->
+                    if (!entry.isPlaced) return@forEachIndexed
+                    if (liftedIndex == index) return@forEachIndexed
+                    val editing = editingIndex == index
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(entry.xDp.dp.roundToPx(), entry.yDp.dp.roundToPx()) }
+                            .then(
+                                if (entry.widthDp > 0) Modifier.width(entry.widthDp.dp)
+                                else Modifier.fillMaxWidth(),
+                            )
+                            .height(entry.heightDp.dp)
+                            .padding(vertical = 4.dp)
+                            .onGloballyPositioned { entryTops[index] = it.positionInWindow().y }
+                            .graphicsLayer { if (editing) { scaleX = 1.02f; scaleY = 1.02f } }
+                            .zIndex(if (editing) 1f else 0f),
+                    ) {
+                        EntryBody(
+                            entry = entry,
+                            appsByKey = appsByKey,
+                            contentColor = contentColor,
+                            onLaunch = onLaunch,
+                            onPressAndHold = { _, _ -> onEditingChange(index) },
+                            onDragMove = if (editing) { { rootY -> moveTo(rootY) } } else null,
+                            onDragEnd = if (editing) { { releaseMove() } } else null,
+                            onDragStart = if (editing) {
+                                { fraction ->
+                                    heldIndex = index
+                                    draggingIndex = index
+                                    liftedIndex = index
+                                    grabFraction = fraction
+                                }
+                            } else null,
+                        )
+                    }
+                }
+            }
+        }
+
         // The one control this page has, as a floating circle in the corner rather than a full
         // width button under the list. It sits out of the way of the widgets, stays in the same
         // place whatever is on the page, and never pushes the stack around as things are added.
@@ -688,7 +826,7 @@ private fun EntryBody(
     contentColor: Color,
     onLaunch: (AppInfo) -> Unit,
     onPressAndHold: (x: Float, y: Float) -> Unit,
-    onDragStart: (() -> Unit)? = null,
+    onDragStart: ((grabFraction: Float) -> Unit)? = null,
     onDragMove: ((dy: Float) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
 ) {
@@ -722,7 +860,7 @@ private fun EntryBody(
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 var dragged = false
-                                onDragStart?.invoke()
+                                onDragStart?.invoke(MOVE_GRAB_DEFAULT)
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break

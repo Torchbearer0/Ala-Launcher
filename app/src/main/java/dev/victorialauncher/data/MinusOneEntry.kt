@@ -42,11 +42,28 @@ sealed interface MinusOneEntry {
      */
     val widthDp: Int
 
+    /**
+     * Where on the page this entry has been put, in dp from the page's top-left. 0,0 means it
+     * has not been placed by hand and is packed into the flow instead.
+     *
+     * Free placement rather than a position in the list, because a list cannot express the
+     * thing people actually want from this page: a clock at the bottom and nothing above it.
+     * Order alone cannot hold an empty space - there is no entry to put the gap against - so the
+     * position is stored, and an entry with one is drawn where it was left.
+     */
+    val xDp: Int
+    val yDp: Int
+
+    /** True once this entry has been put somewhere by hand rather than packed. */
+    val isPlaced: Boolean get() = xDp > 0 || yDp > 0
+
     /** An app widget, held by id in the same host the home screen's widget uses. */
     data class Widget(
         val widgetId: Int,
         override val heightDp: Int,
         override val widthDp: Int = 0,
+        override val xDp: Int = 0,
+        override val yDp: Int = 0,
     ) : MinusOneEntry
 
     /** A launch shortcut for an app, by the same key the app list and favorites use. */
@@ -54,6 +71,8 @@ sealed interface MinusOneEntry {
         val appKey: String,
         override val heightDp: Int,
         override val widthDp: Int = 0,
+        override val xDp: Int = 0,
+        override val yDp: Int = 0,
     ) : MinusOneEntry
 }
 
@@ -106,6 +125,24 @@ fun MinusOneEntry.withWidth(dp: Int): MinusOneEntry = when (this) {
 
 fun MinusOneEntry.withSize(widthDp: Int, heightDp: Int): MinusOneEntry = withWidth(widthDp).withHeight(heightDp)
 
+/**
+ * Puts this entry where it was dropped, in dp from the page's top-left.
+ *
+ * Clamped to something the page can show: x is held inside the page's own width minus the
+ * entry's own, and y inside its height. Without the second clamp a widget dragged past the
+ * bottom would be stored off-screen and come back invisible, with nothing on the page to
+ * explain where it went.
+ */
+fun MinusOneEntry.withPosition(xDp: Int, yDp: Int, pageWidthDp: Int, pageHeightDp: Int): MinusOneEntry {
+    val w = if (widthDp > 0) widthDp else pageWidthDp
+    val x = xDp.coerceIn(0, (pageWidthDp - w).coerceAtLeast(0))
+    val y = yDp.coerceIn(0, (pageHeightDp - heightDp).coerceAtLeast(0))
+    return when (this) {
+        is MinusOneEntry.Widget -> copy(xDp = x, yDp = y)
+        is MinusOneEntry.Shortcut -> copy(xDp = x, yDp = y)
+    }
+}
+
 internal fun minusOneEntriesToJson(entries: List<MinusOneEntry>): String {
     val array = JSONArray()
     entries.forEach { entry ->
@@ -115,6 +152,13 @@ internal fun minusOneEntriesToJson(entries: List<MinusOneEntry>): String {
                 // Only written when it is a real width: a full-width entry is the default, and
                 // storing a zero would mean every future read has to know that means "fill".
                 if (entry.widthDp > 0) put("w", entry.widthDp)
+                // Only written once there is a position. An entry that has never been placed
+                // is stored as height and width alone, which is what every entry written before
+                // free placement looks like, so upgrading moves nothing on its own.
+                if (entry.isPlaced) {
+                    put("x", entry.xDp)
+                    put("y", entry.yDp)
+                }
                 when (entry) {
                     is MinusOneEntry.Widget -> {
                         put("kind", "widget")
@@ -141,13 +185,25 @@ internal fun minusOneEntriesFromJson(json: String?): List<MinusOneEntry> {
             // Absent means full width, which is what every entry stored before this was
             // resizable sideways should keep rather than come back a column narrow.
             val width = obj.optInt("w", 0).coerceIn(0, MINUS_ONE_MAX_WIDTH_DP)
+            // Absent means never placed by hand, which is what every entry written before free
+            // placement looks like - it stays in the packed flow rather than jumping to a corner.
+            val x = obj.optInt("x", 0).coerceAtLeast(0)
+            val y = obj.optInt("y", 0).coerceAtLeast(0)
             when (obj.optString("kind")) {
-                "widget" -> MinusOneEntry.Widget(widgetId = obj.optInt("id", -1), heightDp = height, widthDp = width)
+                "widget" -> MinusOneEntry.Widget(
+                    widgetId = obj.optInt("id", -1),
+                    heightDp = height,
+                    widthDp = width,
+                    xDp = x,
+                    yDp = y,
+                )
                     // A widget with no id cannot be bound, so it is dropped rather than drawn as
                     // an empty box that never fills in.
                     .takeIf { it.widgetId > 0 }
                 "app" -> obj.optString("key").takeIf { it.isNotBlank() }
-                    ?.let { MinusOneEntry.Shortcut(appKey = it, heightDp = height, widthDp = width) }
+                    ?.let {
+                        MinusOneEntry.Shortcut(appKey = it, heightDp = height, widthDp = width, xDp = x, yDp = y)
+                    }
                 else -> null
             }
         }

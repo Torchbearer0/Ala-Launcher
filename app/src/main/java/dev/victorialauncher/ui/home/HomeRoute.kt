@@ -81,6 +81,8 @@ import dev.victorialauncher.data.MinusOneEntry
 import dev.victorialauncher.data.MinusOneMode
 import dev.victorialauncher.data.MinusOnePage
 import dev.victorialauncher.data.withSize
+import dev.victorialauncher.data.withPosition
+import kotlinx.coroutines.flow.first
 import dev.victorialauncher.data.folderToken
 
 import dev.victorialauncher.media.NotificationBus
@@ -1204,7 +1206,16 @@ fun HomeRoute(
                 },
         ) {
             fun updateEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
-                scope.launch { app.prefs.setMinusOne(minusOne.mode, transform(minusOne.entries)) }
+                // Read inside the coroutine rather than using the snapshot this composition was
+                // built with. A drag writes several times in a few hundred milliseconds - a
+                // reorder for every neighbour the finger passes, and then a final position -
+                // and each of those was applied to the list as it was when the page opened.
+                // They overwrote one another, and the last write won with a list that described
+                // nothing that had just happened, so the drag ended up storing no change at all.
+                scope.launch {
+                    val current = app.prefs.minusOne.first()
+                    app.prefs.setMinusOne(current.mode, transform(current.entries))
+                }
             }
 
             MinusOnePage(
@@ -1230,6 +1241,14 @@ fun HomeRoute(
                 onMove = { from, to ->
                     updateEntries { entries ->
                         entries.toMutableList().apply { add(to, removeAt(from)) }
+                    }
+                },
+                onPlace = { index, xDp, yDp, pageW, pageH ->
+                    updateEntries { entries ->
+                        val entry = entries.getOrNull(index) ?: return@updateEntries entries
+                        entries.toMutableList().apply {
+                            set(index, entry.withPosition(xDp, yDp, pageW, pageH))
+                        }
                     }
                 },
                 // Held by the route rather than by the page, so BACK can end an arrangement

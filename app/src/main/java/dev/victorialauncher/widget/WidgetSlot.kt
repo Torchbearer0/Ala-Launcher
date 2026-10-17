@@ -246,7 +246,7 @@ internal fun HostedWidget(
     widgetId: Int,
     onPressAndHold: (x: Float, y: Float) -> Unit,
     /** Set while the page is arranging this widget: a drag then moves it, not the widget. */
-    onDragStart: (() -> Unit)? = null,
+    onDragStart: ((grabFraction: Float) -> Unit)? = null,
     onDragMove: ((dy: Float) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
 ) {

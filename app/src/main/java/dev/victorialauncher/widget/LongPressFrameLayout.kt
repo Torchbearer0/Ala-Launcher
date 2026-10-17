@@ -37,7 +37,7 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
      *
      * [dragMove] is given the finger's position in the window, not a delta - see handleDrag.
      */
-    var dragStart: (() -> Unit)? = null
+    var dragStart: ((grabFraction: Float) -> Unit)? = null
     var dragMove: ((rootY: Float) -> Unit)? = null
     var dragEnd: (() -> Unit)? = null
 
@@ -70,6 +70,46 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
         },
     )
 
+    /**
+     * Reads the arranging drag here, not in [onInterceptTouchEvent].
+     *
+     * A ViewGroup only consults onInterceptTouchEvent for the press and while it has no touch
+     * target; once the widget inside has taken the gesture, the moves go straight to it. So a
+     * drag read from there never ran at all - the press landed, the long press fired, and the
+     * widget could be dragged by nobody. dispatchTouchEvent is called for every event that
+     * reaches this view whichever child ends up handling it, so this is the only place a drag
+     * can be seen whole.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (dragMove != null) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    moving = false
+                    downX = ev.x
+                    downY = ev.y
+                    // Hold the gesture off the ancestors from the press, not from the slop.
+                    // The page is a scrolling column, and a drag that is still inside its own
+                    // touch slop has not yet told handleDrag it is a drag - so waiting for that
+                    // meant the column saw the slop cross first, took the gesture, and the
+                    // widget got exactly one move before it was being carried off-screen.
+                    // While the page is arranging this entry it is not scrolling.
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+
+                MotionEvent.ACTION_MOVE -> handleDrag(ev)
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    if (moving) {
+                        moving = false
+                        dragEnd?.invoke()
+                    }
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -82,9 +122,6 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             }
 
             MotionEvent.ACTION_MOVE -> {
-                // Arranging: a drag belongs to the page, not to the widget inside it.
-                if (handleDrag(ev)) return true
-
                 if (!claimed && canScroll) {
                 val dx = abs(ev.x - downX)
                 val dy = abs(ev.y - downY)
@@ -151,22 +188,11 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(event)
-        when (event.actionMasked) {
-            // Once this view has intercepted, onInterceptTouchEvent stops being called for the
-            // rest of the gesture and every further move arrives here instead. Reading the drag
-            // in only the intercept pass meant a drag reported one slop-sized step and then went
-            // quiet, so holding a widget and dragging it moved it by nothing at all.
-            MotionEvent.ACTION_MOVE -> handleDrag(event)
-
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                longPressFired = false
-                claimed = false
-                if (moving) {
-                    moving = false
-                    dragEnd?.invoke()
-                }
-                parent?.requestDisallowInterceptTouchEvent(false)
-            }
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            longPressFired = false
+            claimed = false
+            moving = false
+            parent?.requestDisallowInterceptTouchEvent(false)
         }
         return true
     }
@@ -191,7 +217,11 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             // per-event cost, and the finger's position within it plus this is where it is
             // on screen - which is what has to be compared against the other entries.
             locationInWindow = IntArray(2).also { getLocationInWindow(it) }
-            dragStart?.invoke()
+            // Where in its own height the drag was taken hold, as a fraction. Passed on so the
+            // lifted entry stays under the finger where it was grabbed rather than jumping so
+            // its middle is under the finger.
+            val h = height
+            dragStart?.invoke(if (h > 0) (ev.y / h).coerceIn(0f, 1f) else 0.5f)
             parent?.requestDisallowInterceptTouchEvent(true)
         }
         dragMove?.invoke(locationInWindow[1] + ev.y)

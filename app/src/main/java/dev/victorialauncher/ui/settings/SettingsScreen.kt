@@ -1269,7 +1269,17 @@ internal fun SliderRow(
             value = value,
             onValueChange = onValueChange,
             valueRange = range,
-            colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary),
+            colors = SliderDefaults.colors(
+                // The filled part carries the accent, and the thumb is white rather than
+                // accented: on a black screen the accent is the one colour everything else is
+                // judged against, and a thumb in it would read as part of the track rather than
+                // as the handle sitting on it.
+                thumbColor = Color.White,
+                activeTrackColor = SettingsTone.accent,
+                inactiveTrackColor = SettingsTone.edge,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
         )
     }
 }

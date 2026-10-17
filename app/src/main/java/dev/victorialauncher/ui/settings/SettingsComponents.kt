@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -239,17 +241,51 @@ internal fun SettingsSwitchRow(
         title = title,
         subtitle = subtitle,
         onClick = { onCheckedChange(!checked) },
-        trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            )
-        },
+        trailing = { GlowingSwitch(checked = checked, onCheckedChange = onCheckedChange) },
     )
+}
+
+/**
+ * A switch that is lit rather than coloured.
+ *
+ * The same rule as the section marks: on a black screen a filled pill is just a shape, and what
+ * makes a switch read as on is the light coming off it. Off it goes almost black and loses its
+ * outline, so the whole row dims with it and the eye can find the ones that are on without
+ * reading any of them.
+ */
+@Composable
+internal fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Box(contentAlignment = Alignment.Center) {
+        // The glow. Behind the switch and larger than it, and only when it is on - a switch that
+        // shines whether it is on or not is not telling anyone anything.
+        if (checked) {
+            Box(
+                Modifier
+                    .size(58.dp)
+                    .graphicsLayer { scaleX = 1.5f; scaleY = 1.35f }
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                SettingsTone.accent.copy(alpha = 0.30f),
+                                Color.Transparent,
+                            ),
+                        ),
+                        CircleShape,
+                    ),
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.Transparent,
+                checkedTrackColor = SettingsTone.accent,
+                uncheckedThumbColor = SettingsTone.card,
+                uncheckedTrackColor = SettingsTone.edge,
+                uncheckedBorderColor = Color.Transparent,
+            ),
+        )
+    }
 }
 
 /**
