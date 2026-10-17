@@ -17,6 +17,30 @@ import androidx.compose.ui.unit.sp
 import dev.victorialauncher.media.NotificationEntry
 
 /**
+ * The newest worth-previewing notification for each app that has one.
+ *
+ * Written once because two call sites had it written twice, and the copies were free to
+ * disagree about what "newest" means - which is how the home screen and the drawer end up
+ * showing different notifications for the same app.
+ *
+ * Ongoing notifications are left out, and that is the whole point of the filter. The shade
+ * list keeps them because hiding one would make the list claim there is nothing while the
+ * system is showing something. A preview line is a different promise: it is a claim that
+ * there is something *waiting to be read*. WhatsApp's "connected" notice cannot be dismissed,
+ * never goes away, and is never the thing anyone opened the launcher to see - left in, it is
+ * the one row that never goes away, and it is the row that made WhatsApp look stuck.
+ *
+ * An app whose only notification is ongoing simply has no preview, which is the honest
+ * reading: there is nothing new, only something that is always there.
+ */
+fun newestPreviewsByPackage(notifications: List<NotificationEntry>): Map<String, NotificationEntry> =
+    notifications.asSequence()
+        .filterNot { it.ongoing }
+        .groupBy { it.packageName }
+        .mapNotNull { (_, entries) -> entries.maxByOrNull { it.postTime } }
+        .associateBy { it.packageName }
+
+/**
  * The compact notification preview shown under an app label when that app has an unread
  * notification: the posting context and how long ago it arrived, the notification's text,
  * and a chevron promising more on a tap.

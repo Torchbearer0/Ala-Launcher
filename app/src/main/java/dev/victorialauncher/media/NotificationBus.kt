@@ -113,6 +113,26 @@ object NotificationBus {
         _notifications.value = value
     }
 
+    /**
+     * Takes a notification off this bus before the system has confirmed it gone.
+     *
+     * The listener is the authority on what is on the shade, but it only speaks when it is
+     * bound, and a dismissal asked for while it is not is a no-op that nothing reports. The
+     * row then vanished from the panel's own list while every other reading of the same
+     * notification - the badge on the icon, the preview under a home-screen row - went on
+     * claiming it was there until the next post or removal happened to arrive.
+     *
+     * So the entry is dropped here as well, and [update] overwrites the result wholesale the
+     * moment the system does answer. If the dismissal was refused, the notification comes
+     * back on that next publish rather than being lost for good, which is the honest outcome:
+     * the system still has it.
+     */
+    fun dismissLocally(key: String) {
+        val current = _notifications.value
+        if (current.none { it.key == key }) return
+        _notifications.value = current.filterNot { it.key == key }
+    }
+
     /** Nothing is known once the service goes, and a stale notification is worse than none. */
     fun clear() {
         _notifications.value = emptyList()

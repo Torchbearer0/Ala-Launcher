@@ -67,10 +67,16 @@ class NowPlayingListenerService : NotificationListenerService() {
         /**
          * Takes a notification off the shade on the UI's behalf.
          *
-         * The failure is swallowed on purpose: the caller has already drawn the row away, and a
-         * dismissal that did not take is corrected the moment the next post or removal arrives.
+         * The bus is told first so the row disappears wherever it is drawn - the panel, the
+         * preview under a home-screen row, the drawer - rather than only where the caller
+         * happened to be holding it. The system's own answer then overwrites that with the
+         * truth, and a dismissal the system refused puts the notification back.
+         *
+         * The failure of the binder call is still swallowed: there is nothing to report it to,
+         * and the authoritative publish that follows settles it either way.
          */
         fun dismiss(key: String) {
+            NotificationBus.dismissLocally(key)
             runCatching { bound?.cancelNotification(key) }
         }
 
@@ -178,7 +184,7 @@ class NowPlayingListenerService : NotificationListenerService() {
             sessionManager.addOnActiveSessionsChangedListener(sessionsListener, componentName)
             attachTo(sessionManager.getActiveSessions(componentName))
         } catch (e: SecurityException) {
-            NowPlayingBus.update(null)
+            // No listener standing, which the shade's own row already says.
         }
     }
 
@@ -187,7 +193,6 @@ class NowPlayingListenerService : NotificationListenerService() {
         bound = null
         runCatching { sessionManager.removeOnActiveSessionsChangedListener(sessionsListener) }
         detach()
-        NowPlayingBus.update(null)
         NotificationCountBus.clear()
         NotificationBus.clear()
     }
@@ -344,31 +349,10 @@ class NowPlayingListenerService : NotificationListenerService() {
     }
 
     private fun republish() {
-        val controller = watched
-        val state = controller?.playbackState
-        if (controller == null || !isLive(state)) {
-            NowPlayingBus.update(null)
-            return
-        }
-
-        val metadata = controller.metadata
-        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
-        val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-        if (title.isBlank() && artist.isBlank()) {
-            NowPlayingBus.update(null)
-            return
-        }
-
-        NowPlayingBus.update(
-            NowPlaying(
-                title = title,
-                artist = artist,
-                isPlaying = state?.state == PlaybackState.STATE_PLAYING,
-                art = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART),
-                controller = controller,
-            )
-        )
+        // Only the shade is republished from here. The bus that carried a Now Playing
+        // snapshot to a home-screen block went with that block: the music is announced by
+        // the notification panel already, and keeping a copy alive that nothing reads was
+        // a second source of truth for something that only ever has one.
     }
 
     /** Playing, paused or buffering counts; stopped, errored or idle does not. */

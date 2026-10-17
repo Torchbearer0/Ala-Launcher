@@ -94,6 +94,7 @@ import dev.victorialauncher.ui.applist.ScrubberGeometry
 import dev.victorialauncher.ui.applist.ScrubState
 import dev.victorialauncher.ui.applist.buildAppListModel
 import dev.victorialauncher.ui.common.FolderPickerDialog
+import dev.victorialauncher.ui.common.newestPreviewsByPackage
 import dev.victorialauncher.widget.WidgetSlotActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -793,10 +794,7 @@ fun HomeRoute(
                 shortcutSwipe = settings.shortcutSwipe,
                 favorites = favorites,
                 notificationPreviewByPackage = remember(notifications) {
-                    notifications.groupBy { it.packageName }
-                        .mapValues { (_, list) -> list.maxByOrNull { it.postTime } }
-                        .filterValues { it != null }
-                        .mapValues { it.value!! }
+                    newestPreviewsByPackage(notifications)
                 },
                 nameOverrides = nameOverrides,
                 iconSizeDp = settings.iconSizeDp,
@@ -1041,10 +1039,7 @@ fun HomeRoute(
                 onDismiss = { closeAppList() },
                 contentColor = settings.contentColor,
                 notificationPreviewByPackage = remember(notifications) {
-                    notifications.groupBy { it.packageName }
-                        .mapValues { (_, list) -> list.maxByOrNull { it.postTime } }
-                        .filterValues { it != null }
-                        .mapValues { it.value!! }
+                    newestPreviewsByPackage(notifications)
                 },
                 hapticsEnabled = settings.hapticsEnabled,
                 showAlphabet = settings.showAlphabet,
