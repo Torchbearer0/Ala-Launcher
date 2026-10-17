@@ -241,7 +241,14 @@ fun WidgetSlot(
  * [onPressAndHold] carries the press position in this widget's local pixels.
  */
 @Composable
-internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) -> Unit) {
+internal fun HostedWidget(
+    widgetId: Int,
+    onPressAndHold: (x: Float, y: Float) -> Unit,
+    /** Set while the page is arranging this widget: a drag then moves it, not the widget. */
+    onDragStart: (() -> Unit)? = null,
+    onDragMove: ((dy: Float) -> Unit)? = null,
+    onDragEnd: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val app = context.applicationContext as VictoriaApp
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
@@ -297,6 +304,9 @@ internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) ->
             LongPressFrameLayout(ctx).apply {
                 hostView?.let { addView(it) }
                 onLongPress = { x, y -> onPressAndHold(x, y) }
+                dragStart = onDragStart
+                dragMove = onDragMove
+                dragEnd = onDragEnd
             }
         },
         update = { container ->
@@ -326,6 +336,9 @@ internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) ->
                 hostView.updateAppWidgetSize(options, wDp, hDp, wDp, hDp)
             }
             container.onLongPress = { x, y -> onPressAndHold(x, y) }
+            container.dragStart = onDragStart
+            container.dragMove = onDragMove
+            container.dragEnd = onDragEnd
         },
     )
 }

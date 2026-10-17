@@ -301,6 +301,11 @@ fun HomeRoute(
     var panelFor by remember { mutableStateOf<Triple<AppInfo, Dp, Dp>?>(null) }
     val minusOne by app.prefs.minusOne.collectAsState(initial = MinusOnePage())
     var minusOneVisible by remember { mutableStateOf(false) }
+
+    // True while a handle on the page is being dragged. A handle drag is a horizontal drag on
+    // the page, and without this the page's own swipe-to-dismiss reads it as a sideways fling
+    // and closes the page halfway through a resize.
+    var minusOneArranging by remember { mutableStateOf(false) }
     val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = false)
     val notifications by NotificationBus.notifications.collectAsState()
 
@@ -703,13 +708,11 @@ fun HomeRoute(
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
                 MenuBlur.anyOpen -> 10.dp
-                // Deliberately nothing for the page on the left. It used to blur the home
-                // screen behind itself, which meant that with the page set to widgets the home
-                // screen sat blurred permanently with nothing drawn over it - it reads as the
-                // whole launcher being broken rather than one effect stuck on. The page gets a
-                // light scrim of its own instead, which is what a launcher can actually do:
-                // the wallpaper is the window's background, not a view this app owns, so there
-                // is nothing here to hand a RenderEffect.
+                // The page on the left blurs the home screen behind it, but only while it is
+                // actually showing. Without this the page's widgets land straight on a sharp
+                // home screen and read as part of it rather than as somewhere else; the blur is
+                // what says "this is a different place".
+                minusOneVisible -> 14.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
@@ -1156,20 +1159,33 @@ fun HomeRoute(
                 // opened it left the obvious way out — dragging back the way you came, which
                 // on a page that sits to the left is a drag to the *left* — doing nothing, and
                 // BACK as the only reliable exit.
-                .pointerInput(Unit) {
+                //
+                // Keyed on `minusOneArranging` so that lifting a handle mid-drag cancels the
+                // gesture that was already in flight. Without that the drag that began on a
+                // resize handle still ended as a sideways fling, and closed the page.
+                .pointerInput(minusOneArranging) {
                     if (!minusOneVisible) return@pointerInput
                     val threshold = with(density) { 72.dp.toPx() }
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         var travelled = 0f
+                        var dismissed = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
-                            change.consume()
                             travelled = change.position.x - down.position.x
+                            // Consumed only once this is a drag that actually closes the page.
+                            // Consuming every move instead took the touch stream from everything
+                            // under it — a widget on this page could not scroll, and a drag to
+                            // move an entry was swallowed before it reached the entry.
+                            if (kotlin.math.abs(travelled) > threshold) {
+                                change.consume()
+                                dismissed = true
+                                break
+                            }
                         }
-                        if (kotlin.math.abs(travelled) > threshold) minusOneVisible = false
+                        if (dismissed) minusOneVisible = false
                     }
                 },
         ) {
@@ -1197,6 +1213,13 @@ fun HomeRoute(
                     }
                     updateEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
                 },
+                onMove = { from, to ->
+                    updateEntries { entries ->
+                        entries.toMutableList().apply { add(to, removeAt(from)) }
+                    }
+                },
+                // Tells the page's own swipe-to-dismiss to stand down while a handle is held.
+                onResizeActiveChange = { minusOneArranging = it },
                 onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
                 onAppInfo = { id -> widgetActions.onAppInfo(id) },
                 onLaunch = { launchEntry(it) },

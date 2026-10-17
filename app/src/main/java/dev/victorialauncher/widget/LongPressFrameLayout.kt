@@ -13,6 +13,9 @@ import kotlin.math.abs
 /** How much more vertical than sideways a drag must be before the widget takes it for a scroll. */
 private const val DIRECTION_MARGIN = 1.25f
 
+/** How far a drag has to travel before it is moving the widget rather than pressing it. */
+private const val MOVE_SLOP_PX = 12f
+
 /**
  * Wraps an embedded AppWidgetHostView so a genuine long-press (finger held still) opens our
  * edit menu, while an ordinary tap or drag still reaches the widget underneath untouched.
@@ -27,6 +30,16 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
 
     /** x/y are the press position in this view's local pixel coordinates. */
     var onLongPress: ((x: Float, y: Float) -> Unit)? = null
+
+    /**
+     * Set only while the page is arranging this widget, so a drag moves it rather than the
+     * widget. Null the rest of the time, and the widget's own scrolling is left alone.
+     */
+    var dragStart: (() -> Unit)? = null
+    var dragMove: ((dy: Float) -> Unit)? = null
+    var dragEnd: (() -> Unit)? = null
+
+    private var moving = false
 
     private var longPressFired = false
 
@@ -59,12 +72,17 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
                 claimed = false
+                moving = false
                 downX = ev.x
                 downY = ev.y
                 canScroll = hasScrollableContent()
             }
 
-            MotionEvent.ACTION_MOVE -> if (!claimed && canScroll) {
+            MotionEvent.ACTION_MOVE -> {
+                // Arranging: a drag belongs to the page, not to the widget inside it.
+                if (handleDrag(ev)) return true
+
+                if (!claimed && canScroll) {
                 val dx = abs(ev.x - downX)
                 val dy = abs(ev.y - downY)
                 // Claimed early, and only for up and down.
@@ -96,6 +114,7 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
                     claimed = true
                     parent?.requestDisallowInterceptTouchEvent(true)
                 }
+                }
             }
         }
         gestureDetector.onTouchEvent(ev)
@@ -103,7 +122,7 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             // Our own menu is taking over, so the hold on the parent is no longer wanted.
             parent?.requestDisallowInterceptTouchEvent(false)
         }
-        return longPressFired
+        return longPressFired || moving
     }
 
     /**
@@ -129,11 +148,44 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            longPressFired = false
-            claimed = false
-            parent?.requestDisallowInterceptTouchEvent(false)
+        when (event.actionMasked) {
+            // Once this view has intercepted, onInterceptTouchEvent stops being called for the
+            // rest of the gesture and every further move arrives here instead. Reading the drag
+            // in only the intercept pass meant a drag reported one slop-sized step and then went
+            // quiet, so holding a widget and dragging it moved it by nothing at all.
+            MotionEvent.ACTION_MOVE -> handleDrag(event)
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                longPressFired = false
+                claimed = false
+                if (moving) {
+                    moving = false
+                    dragEnd?.invoke()
+                }
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
         }
+        return true
+    }
+
+    /**
+     * Reports an arranging drag, in whichever pass this event was delivered. True once the drag
+     * is ours, which is the signal to intercept.
+     *
+     * Reports the travel of the whole gesture rather than the step since the last event, so the
+     * page sees one number it can compare against a threshold instead of a run of tiny deltas
+     * it would have to accumulate itself.
+     */
+    private fun handleDrag(ev: MotionEvent): Boolean {
+        if (dragMove == null) return false
+        val total = ev.y - downY
+        if (!moving) {
+            if (abs(total) <= MOVE_SLOP_PX) return false
+            moving = true
+            dragStart?.invoke()
+            parent?.requestDisallowInterceptTouchEvent(true)
+        }
+        dragMove?.invoke(total)
         return true
     }
 }

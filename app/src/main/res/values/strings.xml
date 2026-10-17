@@ -393,6 +393,8 @@
     <string name="minus_one_resize_width">Width: %1$s</string>
     <string name="minus_one_resize_height">Height: %1$d dp</string>
     <string name="minus_one_remove">Remove from page</string>
+    <string name="minus_one_insert_here">Add a widget here</string>
+    <string name="minus_one_more">More options for this widget</string>
     <string name="minus_one_change">Change what this page shows</string>
     <string name="minus_one_missing_app">App not installed</string>
     <string name="widget_clock_weather_hint">Weather comes from a weather app that already has it, so Ala never asks where you are. In Breezy Weather, turn on Settings → Widgets &amp; Live Wallpaper → Data sharing.</string>

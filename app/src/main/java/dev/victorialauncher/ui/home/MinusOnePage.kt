@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Height
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -51,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,12 +60,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.zIndex
+import kotlin.math.abs
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.platform.LocalContext
@@ -105,6 +115,20 @@ private val HANDLE_TOUCH_DP = 26
 
 private val HANDLE_CORNER_DP = 34
 
+/**
+ * The narrowest leftover gap that is still an offer rather than a mistake.
+ *
+ * Below this the plus would be a sliver to aim at, and a mis-tap that opens the widget picker
+ * for nothing is worse than not showing the gap at all.
+ */
+private const val MIN_INSERT_GAP_DP = 96
+
+/** How far a drag travels before it is moving a widget rather than pressing it. */
+private const val MOVE_SLOP_PX = 12f
+
+/** How far a widget travels before it swaps places with its neighbour. */
+private const val MOVE_STEP_DP = 40
+
 /** The add-widget control. Big enough to be a target without covering a widget. */
 private const val FAB_SIZE_DP = 60
 
@@ -124,6 +148,8 @@ fun MinusOnePage(
     onAddWidget: () -> Unit,
     onResize: (index: Int, widthDp: Int, heightDp: Int) -> Unit,
     onRemove: (index: Int) -> Unit,
+    /** Reorders the stack: a held entry dragged past a neighbour moves there. */
+    onMove: (from: Int, to: Int) -> Unit,
     onWidgetSettings: (widgetId: Int) -> Unit,
     onAppInfo: (widgetId: Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
@@ -147,6 +173,7 @@ fun MinusOnePage(
             onAddWidget = onAddWidget,
             onResize = onResize,
             onRemove = onRemove,
+            onMove = onMove,
             onWidgetSettings = onWidgetSettings,
             onAppInfo = onAppInfo,
             onLaunch = onLaunch,
@@ -220,6 +247,8 @@ private fun WidgetStackPage(
     onAddWidget: () -> Unit,
     onResize: (index: Int, widthDp: Int, heightDp: Int) -> Unit,
     onRemove: (index: Int) -> Unit,
+    /** Reorders the stack: a held entry dragged past a neighbour moves there. */
+    onMove: (from: Int, to: Int) -> Unit,
     onWidgetSettings: (widgetId: Int) -> Unit,
     onAppInfo: (widgetId: Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
@@ -229,7 +258,12 @@ private fun WidgetStackPage(
 ) {
     var menuIndex by remember { mutableStateOf<Int?>(null) }
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
-    var resizingIndex by remember { mutableStateOf<Int?>(null) }
+
+    // Where the edit buttons of the entry being arranged sit on screen, so the menu can hang
+    // off them. Recorded on layout rather than guessed from the entry, because the entry's
+    // position moves with the scroll and with every other entry in the wrapping row.
+    var menuAnchor by remember { mutableStateOf(Offset.Zero) }
+
     val density = LocalDensity.current
     // What each entry actually measures, in dp. A full-width entry stores 0 to mean "fill", so
     // its stored width is not a number a drag can be added to — adding a negative delta to it
@@ -238,18 +272,77 @@ private fun WidgetStackPage(
     // a number the first time anyone drags it.
     val measuredWidthDp = remember { mutableStateMapOf<Int, Int>() }
 
+    // Which entry is being arranged, and which one is being dragged right now.
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var rowWidthDp by remember { mutableIntStateOf(0) }
+
+    // How far a widget has to travel before it changes place with its neighbour. Small enough
+    // that a deliberate drag needs only a nudge, and large enough that the touch slop that
+    // starts every gesture cannot do it on its own.
+    val moveStepPx = with(density) { MOVE_STEP_DP.dp.toPx() }
+
+    // The index of the entry under the finger, tracked rather than captured from the entry's
+    // own closure. A swap is itself the move: the moment the first one lands the entry that was
+    // at `index` is somewhere else, so the captured index names a different entry and a second
+    // swap would shuffle the wrong one.
+    var heldIndex by remember { mutableStateOf<Int?>(null) }
+
+    // The travel reported at the last swap. The drag reports the whole gesture so far, so
+    // subtracting this leaves the travel since the last decision - which is what makes one
+    // step cost one step instead of compounding on a finger that has stopped moving.
+    var lastMoveDy by remember { mutableFloatStateOf(0f) }
+
+    // One step per moveStepPx of travel, so the stack rearranges under the finger rather than
+    // only on release. Measured as travel rather than as a direction, because the drag that
+    // starts an arranging gesture is a touch slop by definition, and treating that slop as a
+    // deliberate move would reorder the stack every time anyone merely began to drag.
+    fun moveStep(dyPx: Float) {
+        val from = heldIndex ?: return
+        val travelled = dyPx - lastMoveDy
+        if (abs(travelled) < moveStepPx) return
+        lastMoveDy = dyPx
+        val to = (if (travelled > 0f) from + 1 else from - 1).coerceIn(0, entries.lastIndex)
+        if (to == from) return
+        onMove(from, to)
+        heldIndex = to
+        draggingIndex = to
+        // Editing follows the entry rather than the slot. Left on the old index, the handles
+        // and the cross would stay behind on whichever entry had been sitting there.
+        editingIndex = to
+    }
+
+    fun releaseMove() {
+        heldIndex = null
+        draggingIndex = null
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        // A scrim behind the stack rather than a blur, because a launcher cannot blur the
-        // system wallpaper - the wallpaper is the window's background, not a view this app owns,
-        // so there is nothing here to hand a RenderEffect. What a scrim buys is the same thing
-        // the blur was after: widgets that are hard to read on a busy wallpaper stop being hard
-        // to read. Kept light, so a plain wallpaper still shows through.
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)))
+        // Its own surface, so the page is a place rather than widgets floating over the home
+        // screen it was reached from. The gradient rather than a flat wash so the top is a little
+        // heavier than the bottom: content sits under the top, and a flat scrim leaves the middle
+        // of the stack floating.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.55f),
+                        0.45f to Color.Black.copy(alpha = 0.62f),
+                        1f to Color.Black.copy(alpha = 0.72f),
+                    ),
+                ),
+        )
         Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
+            // After the padding, not before it. Attached any earlier this reports the width of
+            // the whole scroll container rather than the width an entry actually gets to use,
+            // and a gap worked out from that is wider than the row it has to fit into - which is
+            // how "insert beside this one" turned into "insert below this one".
+            .padding(horizontal = 16.dp)
+            .onSizeChanged { rowWidthDp = with(density) { it.width.toDp().value.toInt() } },
     ) {
         Spacer(Modifier.height(20.dp))
 
@@ -269,6 +362,7 @@ private fun WidgetStackPage(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
         entries.forEachIndexed { index, entry ->
+            val editing = editingIndex == index
             Box(
                 modifier = Modifier
                     // A width of 0 means fill what is left, which in a wrapping row means the
@@ -276,41 +370,147 @@ private fun WidgetStackPage(
                     .then(if (entry.widthDp > 0) Modifier.width(entry.widthDp.dp) else Modifier.fillMaxWidth())
                     .height(entry.heightDp.dp)
                     .onSizeChanged { measuredWidthDp[index] = with(density) { it.width.toDp().value.toInt() } }
-                    .padding(vertical = 4.dp),
+                    // No border around a widget at any time. A frame says "this is a box in a
+                    // layout"; the widgets are content, and the only thing that should outline
+                    // one is the user holding it in edit mode.
+                    .padding(vertical = 4.dp)
+                    .graphicsLayer {
+                        if (editing) {
+                            scaleX = 1.02f
+                            scaleY = 1.02f
+                        } else if (draggingIndex == index) {
+                            scaleX = 1.03f
+                            scaleY = 1.03f
+                            alpha = 0.92f
+                        }
+                    }
+                    .zIndex(if (editing || draggingIndex == index) 1f else 0f),
             ) {
                 EntryBody(
                     entry = entry,
                     appsByKey = appsByKey,
                     contentColor = contentColor,
                     onLaunch = onLaunch,
-                    onPressAndHold = { x, y ->
-                        menuIndex = index
-                        menuOffset = with(density) { DpOffset(x.toDp(), y.toDp()) }
-                    },
+                    // A long press is the way into editing, which is why there is no dp dialog
+                    // and no handle strip sitting on the page all the time: the gesture that
+                    // arranges a widget is the same gesture that already edited a row. It also
+                    // no longer opens a menu - the menu used to be the only way to resize or
+                    // remove, and both of those are now buttons on the entry, so a menu over
+                    // the top of it would only hide the thing it was opened for.
+                    onPressAndHold = { _, _ -> editingIndex = index },
+                    // Dragging the middle moves it. Only while editing, because otherwise a drag
+                    // on a widget belongs to the widget.
+                    onDragMove = if (editing) { { dy -> moveStep(dy) } } else null,
+                    onDragEnd = if (editing) { { releaseMove() } } else null,
+                    onDragStart = if (editing) {
+                        {
+                            heldIndex = index
+                            draggingIndex = index
+                            lastMoveDy = 0f
+                        }
+                    } else null,
                 )
 
-                // Both handles live inside the entry they resize. Outside it they would sit on
-                // whatever is next door - a full-width entry's bottom edge handle would swallow
-                // a swipe meant for the entry below it, and the bottom-most entry would need an
-                // invisible strip under it that nothing else knows is there.
-                ResizeHandles(
-                    contentColor = contentColor,
-                    onDragWidth = { deltaDp ->
-                        val base = if (entry.widthDp > 0) entry.widthDp else (measuredWidthDp[index] ?: 0)
-                        onResize(index, base + deltaDp, entry.heightDp)
-                    },
-                    onDragHeight = { deltaDp -> onResize(index, entry.widthDp, entry.heightDp + deltaDp) },
-                    onDragCorner = { dx, dy ->
-                        // From the measured width when the entry is filling the row, so the
-                        // first sideways drag is what gives it a width to have.
-                        val base = if (entry.widthDp > 0) entry.widthDp else (measuredWidthDp[index] ?: 0)
-                        onResize(index, base + dx, entry.heightDp + dy)
-                    },
-                    // Only offered where they mean something: a full-width entry has no edge
-                    // to its right to grab.
-                    showWidth = entry.widthDp > 0,
-                    onActiveChange = onResizeActiveChange,
-                )
+                if (editing) {
+                    ResizeHandles(
+                        contentColor = contentColor,
+                        onDragWidth = { deltaDp ->
+                            val base = if (entry.widthDp > 0) entry.widthDp else (measuredWidthDp[index] ?: 0)
+                            onResize(index, base + deltaDp, entry.heightDp)
+                        },
+                        onDragHeight = { deltaDp -> onResize(index, entry.widthDp, entry.heightDp + deltaDp) },
+                        onDragCorner = { dx, dy ->
+                            val base = if (entry.widthDp > 0) entry.widthDp else (measuredWidthDp[index] ?: 0)
+                            onResize(index, base + dx, entry.heightDp + dy)
+                        },
+                        showWidth = entry.widthDp > 0,
+                        onActiveChange = onResizeActiveChange,
+                    )
+
+                    // Remove and more, in the corner where every editor puts them. Both are on
+                    // the entry rather than behind a long press, because the long press is what
+                    // brings them into being and a menu cannot be inside the thing that opened
+                    // it. The description is on the button as well as the glyph: a clickable
+                    // parent merges its children, and that merge is what left the glyph's own
+                    // description off the accessibility tree.
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .onGloballyPositioned {
+                                // Where the menu should hang from, once one of these is tapped.
+                                menuAnchor = it.positionInRoot() + Offset(it.size.width.toFloat(), 0f)
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (entry is MinusOneEntry.Widget) {
+                            EditButton(
+                                label = stringResource(R.string.minus_one_more),
+                                onClick = {
+                                    menuIndex = index
+                                    menuOffset = with(density) {
+                                        DpOffset(menuAnchor.x.toDp(), menuAnchor.y.toDp())
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        EditButton(
+                            label = stringResource(R.string.minus_one_remove),
+                            onClick = {
+                                editingIndex = null
+                                menuIndex = null
+                                onRemove(index)
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // The space a half-width widget leaves beside it is not dead - it is an offer.
+            // A sibling of the entry rather than a child of it: given the entry's own width it
+            // lands on top of the widget instead of in the gap beside it, which is the only
+            // place it is any use. As a sibling, FlowRow gives it whatever is left of the same
+            // row and wraps it down to the next one when nothing is left.
+            // Only while something is being edited, so the page is never cluttered with holes,
+            // and only where the gap is wide enough to be worth aiming at.
+            if (editing && entry.widthDp > 0) {
+                val gapDp = rowWidthDp - entry.widthDp - ENTRY_GAP_DP
+                if (gapDp >= MIN_INSERT_GAP_DP) {
+                    Box(
+                        modifier = Modifier
+                            .width(gapDp.dp)
+                            .height(entry.heightDp.dp)
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Color.White.copy(alpha = 0.06f))
+                            .clickable {
+                                editingIndex = null
+                                onAddWidget()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.minus_one_insert_here),
+                            tint = contentColor.copy(alpha = 0.55f),
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                }
             }
         }
         }
@@ -345,22 +545,16 @@ private fun WidgetStackPage(
         }
     }
 
+    // Only what the buttons on the entry cannot do: resizing is a handle and removal is the
+    // cross beside it, so both are gone from here rather than offered twice.
     menuIndex?.let { index ->
         val entry = entries.getOrNull(index) ?: return@let
-        TouchAnchoredMenu(
-            expanded = true,
-            offset = menuOffset,
-            onDismissRequest = { menuIndex = null },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.minus_one_resize)) },
-                leadingIcon = { Icon(Icons.Filled.Height, contentDescription = null) },
-                onClick = {
-                    menuIndex = null
-                    resizingIndex = index
-                },
-            )
-            if (entry is MinusOneEntry.Widget) {
+        if (entry is MinusOneEntry.Widget) {
+            TouchAnchoredMenu(
+                expanded = true,
+                offset = menuOffset,
+                onDismissRequest = { menuIndex = null },
+            ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.widget_change_settings)) },
                     leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
@@ -378,27 +572,30 @@ private fun WidgetStackPage(
                     },
                 )
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.minus_one_remove)) },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                onClick = {
-                    menuIndex = null
-                    onRemove(index)
-                },
-            )
         }
     }
+}
 
-    resizingIndex?.let { index ->
-        val entry = entries.getOrNull(index) ?: return@let
-        ResizeDialog(
-            widthDp = entry.widthDp,
-            heightDp = entry.heightDp,
-            onDismiss = { resizingIndex = null },
-            onChange = { w, h -> onResize(index, w, h) },
-        )
-    }
+/**
+ * A round button that appears on an entry only while the page is arranging it.
+ *
+ * The description sits on the button rather than on the glyph inside it. A clickable parent
+ * merges the semantics of its children into its own, and that merge is why the glyph's own
+ * description stopped reaching the accessibility tree - which also means it stopped reaching
+ * anything reading the screen from outside.
+ */
+@Composable
+private fun EditButton(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+        content = { content() },
+    )
 }
 
 /** What the entry itself draws: a hosted widget, or a shortcut that launches something. */
@@ -409,9 +606,20 @@ private fun EntryBody(
     contentColor: Color,
     onLaunch: (AppInfo) -> Unit,
     onPressAndHold: (x: Float, y: Float) -> Unit,
+    onDragStart: (() -> Unit)? = null,
+    onDragMove: ((dy: Float) -> Unit)? = null,
+    onDragEnd: (() -> Unit)? = null,
 ) {
     when (entry) {
-        is MinusOneEntry.Widget -> HostedWidget(widgetId = entry.widgetId, onPressAndHold = onPressAndHold)
+        is MinusOneEntry.Widget -> HostedWidget(
+            widgetId = entry.widgetId,
+            onPressAndHold = onPressAndHold,
+            // A widget is a hosted Android view, so it needs the same wording as the row below:
+            // the whole widget stands in for its own middle.
+            onDragStart = onDragStart,
+            onDragMove = onDragMove,
+            onDragEnd = onDragEnd,
+        )
 
         is MinusOneEntry.Shortcut -> {
             // An app that has been uninstalled since it was added. Shown as a dead row rather
@@ -423,10 +631,30 @@ private fun EntryBody(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.22f), RoundedCornerShape(22.dp))
                     .pointerInput(entry.appKey) {
-                        detectTapGestures(
-                            onTap = { app?.let(onLaunch) },
-                            onLongPress = { offset -> onPressAndHold(offset.x, offset.y) },
-                        )
+                        if (onDragMove == null) {
+                            detectTapGestures(
+                                onTap = { app?.let(onLaunch) },
+                                onLongPress = { offset -> onPressAndHold(offset.x, offset.y) },
+                            )
+                        } else {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var dragged = false
+                                onDragStart?.invoke()
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    val dy = change.position.y - down.position.y
+                                    if (abs(dy) > MOVE_SLOP_PX) dragged = true
+                                    if (dragged) {
+                                        change.consume()
+                                        onDragMove(dy)
+                                    }
+                                }
+                                if (dragged) onDragEnd?.invoke()
+                            }
+                        }
                     }
                     .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -585,48 +813,6 @@ private fun HandleStrip(
 
 /** Absolute px to dp, so a drag survives someone else having consumed the change. */
 private fun Float.toDp(density: Density): Float = with(density) { this@toDp.toDp().value }
-
-/** The precise way to resize, for anyone who would rather not drag and watch. */
-@Composable
-private fun ResizeDialog(
-    widthDp: Int,
-    heightDp: Int,
-    onDismiss: () -> Unit,
-    onChange: (Int, Int) -> Unit,
-) {
-    var w by remember { mutableIntStateOf(widthDp) }
-    var h by remember { mutableIntStateOf(heightDp) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.minus_one_resize)) },
-        text = {
-            Column {
-                Text(stringResource(R.string.minus_one_resize_width, widthLabel(w)), style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = w.toFloat(),
-                    onValueChange = { w = it.toInt() },
-                    // 0 stands for full width, so the floor is 0 and the ceiling is whatever a
-                    // full page is. Dragging to 0 is how an entry is put back to filling.
-                    valueRange = 0f..MINUS_ONE_MAX_WIDTH_DP.toFloat(),
-                    onValueChangeFinished = { onChange(w, h) },
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.minus_one_resize_height, h), style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = h.toFloat(),
-                    onValueChange = { h = it.toInt() },
-                    valueRange = MINUS_ONE_MIN_HEIGHT_DP.toFloat()..MINUS_ONE_MAX_HEIGHT_DP.toFloat(),
-                    onValueChangeFinished = { onChange(w, h) },
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) } },
-    )
-}
-
-/** Full width is stored as 0, so it has to be spelled out rather than shown as "0dp". */
-private fun widthLabel(widthDp: Int): String =
-    if (widthDp <= 0) "full" else "${widthDp}dp"
 
 @Composable
 private fun EmptyStackHint(contentColor: Color, onAddWidget: () -> Unit, onOpenSettings: () -> Unit) {
