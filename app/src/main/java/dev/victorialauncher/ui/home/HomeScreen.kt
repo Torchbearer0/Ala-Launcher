@@ -459,29 +459,33 @@ fun HomeScreen(
     var favBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
     /**
-     * The empty band between the widget and the first app row, in window pixels.
+     * Where the widget actually is, in window pixels, measured the same way as the favorites.
      *
-     * Measured rather than assumed, because "the gap" is wherever the widget happens to end and
-     * the padding happens to begin, and both of those are the user's to set. Reported like the
-     * favorites' bounds are, so it survives every relayout that moves them.
-     *
-     * Empty when there is no widget: the stack then starts at the top of the screen and there
-     * is no band under it, and treating the whole favourites list as one would make an ordinary
-     * swipe across a row open a page instead.
+     * Only needed to tell the widget apart from the empty screen around it. It used to be used
+     * the other way round — to measure the single gap between the widget and the first row —
+     * which made the gesture depend on that one band being big enough to aim at, so tightening
+     * the padding quietly turned the feature off rather than making it harder to use.
      */
-    var gapBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var widgetBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
-    val minusOneSwipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val minusOneSwipeThreshold = with(LocalDensity.current) { 56.dp.toPx() }
 
-    fun refreshGapBounds() {
-        val rowTop = favBounds?.first ?: return
+    fun refreshWidgetBounds() {
         val widget = displayItems.firstOrNull { it is HomeItem.Widget } ?: return
         val key = measureKey(widget)
-        val top = (itemTops[key] ?: return) + (itemHeights[key] ?: return)
-        val current = gapBounds
-        if (current == null || abs(current.first - top) > 0.5f || abs(current.second - rowTop) > 0.5f) {
-            gapBounds = top to rowTop
+        val top = itemTops[key] ?: return
+        val bottom = top + (itemHeights[key] ?: return)
+        val current = widgetBounds
+        if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
+            widgetBounds = top to bottom
         }
+    }
+
+    /** Whether a touch at this height landed on something that is drawn rather than on space. */
+    fun isOnContent(y: Float): Boolean {
+        widgetBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        favBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        return false
     }
 
     /** Recomputed after each row reports, against the list as it is now rather than as it was. */
@@ -496,7 +500,7 @@ fun HomeScreen(
         if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
             favBounds = top to bottom
         }
-        refreshGapBounds()
+        refreshWidgetBounds()
     }
 
     LaunchedEffect(favBounds) {
@@ -505,7 +509,7 @@ fun HomeScreen(
     }
 
     LaunchedEffect(favBounds) {
-        refreshGapBounds()
+        refreshWidgetBounds()
     }
 
     val peekPullPx = with(density) { 30.dp.toPx() }
@@ -619,35 +623,44 @@ fun HomeScreen(
             .fillMaxSize()
             .onSizeChanged { viewportHeight = it.height }
             .onGloballyPositioned { rootY = it.positionInWindow().y }
-            // A swipe right through the empty band under the widget opens the page to the left.
+            // A swipe right across the home screen's empty space opens the page to the left.
+            // "Empty space" means anywhere the widget is not and no row is - not one measured
+            // band, because a band is only as big as the padding between the two and tightening
+            // that padding would take the gesture away rather than make it narrower.
+            //
             // Horizontal-only, so it cannot be confused with the vertical pull that peeks the
-            // shade or the swipe up that opens the app list, both of which own the vertical slop
-            // and both of which are still free to claim a drag that goes nowhere sideways.
-            // The down has to land in the band rather than the gesture being read wherever it
-            // ends: a drag that began on a row is a drag on that row.
-            .pointerInput(minusOneEnabled, gapBounds) {
+            // shade or the swipe up that opens the app list: both own the vertical slop and
+            // both stay free to claim a drag that goes nowhere sideways.
+            //
+            // A drag that starts on the widget or on a row is not ours. Rows have a horizontal
+            // swipe of their own for app shortcuts, and stealing it would be trading a gesture
+            // that works for one that does not.
+            .pointerInput(minusOneEnabled, favBounds, widgetBounds) {
                 if (!minusOneEnabled) return@pointerInput
-                val band = gapBounds ?: return@pointerInput
-                // Too narrow to aim at is treated as no band at all, rather than as a band that
-                // happens to be there: a gesture nobody can land is worse than no gesture.
-                if (band.second - band.first < MINUS_ONE_MIN_BAND_PX) return@pointerInput
-                // Plain locals, not state: this runs on every drag event of every gesture on
-                // this screen, and writing state there would recompose the home screen on each
-                // one. Keyed on the band, so a relayout that moves it restarts the detector.
-                var startedInBand = false
-                var travelled = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        startedInBand = rootY + offset.y in band.first..band.second
-                        travelled = 0f
-                    },
-                    onDragEnd = {
-                        if (startedInBand && travelled > minusOneSwipeThreshold) onOpenMinusOne()
-                    },
-                    onDragCancel = {},
-                ) { change, amount ->
-                    change.consume()
-                    travelled += amount
+                // Written out rather than detectHorizontalDragGestures: that waits on a slop
+                // check that a consumed down can never satisfy, so on this screen it silently
+                // never fires. The down here is claimed by the vertical pull further down the
+                // chain, and that claim is left alone — the two gestures are told apart by which
+                // way the finger travels, not by who wins.
+                //
+                // Measured on absolute positions, not positionChange(), for the same reason:
+                // that reports zero for a consumed change, so travel would always read as 0.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startedOnEmptySpace = !isOnContent(rootY + down.position.y)
+                    val startX = down.position.x
+                    var furthestX = startX
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        furthestX = maxOf(furthestX, change.position.x)
+                    }
+                    // Furthest rather than final: a finger that travels right and comes back
+                    // before lifting has still been to the right, and that is what it meant.
+                    if (startedOnEmptySpace && furthestX - startX > minusOneSwipeThreshold) {
+                        onOpenMinusOne()
+                    }
                 }
             }
             .draggable(
@@ -1842,15 +1855,6 @@ private fun handleReserve(dragHandle: Modifier?, sidePaddingDp: Int): Dp {
 private val STRIP_INSET = 56.dp
 
 private val MAX_CONTENT_WIDTH = 600.dp
-
-/**
- * The gap has to be tall enough to aim at before a swipe in it means anything.
- *
- * With the paddings at their defaults there is barely a finger-width between the widget and the
- * first row, and asking for a precise swipe in a band that narrow turns the gesture into a
- * miss rather than a shorter gesture.
- */
-private const val MINUS_ONE_MIN_BAND_PX = 96f
 
 /** Which side a capped stack sits against, so it stays where the rows are aligned. */
 private fun HomeAlignment.wideScreenAlignment(): Alignment = when (this) {

@@ -624,7 +624,12 @@ val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContr
             onAddWidget = { focus ->
                 // Carries which app asked, so the picker can put that app's widgets at the top
                 // rather than opening on the whole device catalogue every time.
-                minusOneWidgetPicker = false
+                //
+                // Deliberately does not clear minusOneWidgetPicker: onAddWidgetToMinusOne sets
+                // that flag and then comes through here, so clearing it in this handler undid
+                // it a line later and every widget added from the left-hand page landed on the
+                // home screen's pager instead. The flag is cleared by whoever reads it — the
+                // picker's result callback, which is the one place that acts on it.
                 widgetPickerLauncher.launch(
                     Intent(context, WidgetPickerActivity::class.java).apply {
                         if (focus != null) putExtra(EXTRA_FOCUS_PACKAGE, focus)

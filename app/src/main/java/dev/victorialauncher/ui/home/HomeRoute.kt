@@ -21,6 +21,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
@@ -1141,18 +1142,26 @@ fun HomeRoute(
                         layout(0, 0) {}
                     }
                 }
-                // Swiping right again goes back, which is the gesture that brought the page in.
-                // Only once it has clearly travelled right, so a scroll inside the page — which
-                // is vertical — and a drag on a divider never close it by accident.
+                // A decisive drag either way closes the page, because there is nothing else on it for a
+                // sideways drag to mean: its content is one vertical stack, and the entries in
+                // it answer to a long press rather than a drag. Counting only the direction that
+                // opened it left the obvious way out — dragging back the way you came, which
+                // on a page that sits to the left is a drag to the *left* — doing nothing, and
+                // BACK as the only reliable exit.
                 .pointerInput(Unit) {
                     if (!minusOneVisible) return@pointerInput
-                    var travelled = 0f
-                    detectHorizontalDragGestures(
-                        onDragEnd = { if (travelled > with(density) { 72.dp.toPx() }) minusOneVisible = false },
-                        onDragCancel = { travelled = 0f },
-                    ) { change, amount ->
-                        change.consume()
-                        travelled += amount
+                    val threshold = with(density) { 72.dp.toPx() }
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var travelled = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            travelled = change.position.x - down.position.x
+                        }
+                        if (kotlin.math.abs(travelled) > threshold) minusOneVisible = false
                     }
                 },
         ) {
