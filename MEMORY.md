@@ -20,6 +20,14 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
   live in the About section, not only the README.
 - Remote to push to: `git push fork main` (fork = Torchbearer0).
 
+## Backups
+
+- **`C:\Users\udayk\Desktop\Ala-Launcher-backup-2026-10-17.zip`** — 10.3 MB, 280 entries, 98
+  Kotlin files, made with `git archive --format=zip -o <dest> HEAD` from the repo root.
+  Tracked files only, so no build output and no gradle caches, and it is exactly a commit.
+  Check what is in one with `[System.IO.Compression.ZipFile]::OpenRead(...)`.
+- `NEXT-SESSION.md` no longer exists — its content was folded into this file. Nothing is lost.
+
 ## Environment
 
 - `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`
@@ -101,6 +109,16 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
    change to the list as it was at composition time, so several writes in a few hundred ms
    overwrote each other and the last won with stale data. Read the current value **inside the
    coroutine** (`app.prefs.flow.first()`). Symptom: the UI changes and nothing persists.
+21. **NEVER bulk-edit Kotlin from PowerShell, not even "just a few exact token renames".** I
+   did it once for 10 `Checkbox(`→`GlowingCheckbox(` lines and it happened to be fine — but
+   only because every `String.Contains` was checked first. Use the editor tool.
+22. **`SwitchDefaults.colors` / `CheckboxDefaults.colors` do not all take the same parameters.**
+   `SwitchDefaults` has no `uncheckedBorderColor`; `CheckboxDefaults` has no
+   `uncheckedBorderColor` either (only `disabledBorderColor`). Drop the param rather than
+   guessing again.
+23. **Material3 controls do not appear in a `uiautomator` dump as their platform class.**
+   A Compose `Switch` is not an `android.widget.Switch` node. To check one exists and is
+   coloured, screencap and count accent pixels — the pixel-sampling recipe above.
 
 ## Current state of the -1 page (the page to the left of home)
 
@@ -138,8 +156,14 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
     Placed entries are drawn by an overlay **outside the scrolling Column** (a position is a
     place on the page, not in a list) and skipped by the FlowRow. Only written once placed, so
     nothing moves at upgrade. `withPosition` clamps against the page size passed by the caller.
-    **Known gap: a placed entry can overlap one still in the flow.** Resolving that needs a
-    pass that shifts neighbours out of a dropped entry's band.
+    **Known gap: none outstanding.** A drop is resolved by `resolveDropY(desiredY, heightDp,
+    occupied, pageHeightDp, gapDp)` — **10 tests in `ResolveDropYTest`**. A position is a
+    *wish*: the wish, then the gap **below** each entry in the way, then the gap above.
+    **Downwards is preferred over nearest** — nearest will send a widget the length of the page
+    against the direction the finger was travelling. If the page is packed solid the answer is
+    the wish clamped, because something must give and hiding a widget is worse than overlapping.
+    `occupiedBands()` reads where each entry was *actually laid out*, not the list — the list
+    knows neither entry heights nor where the placed ones ended up.
   - a **cross** in the corner removes it; the **dot** beside it appears **only if the widget's
     provider declares a configure activity** (`AppWidgetProviderInfo.configure != null`) — on
     this device none of the four widgets do, so there is no dot at all,
@@ -165,14 +189,20 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 - The sections list is **one card containing 8 rows**, each with a coloured mark at its left.
   `SettingsRow` grew a `leading` slot for it.
 - Measured: page `0,0,0`, card `0B0B0E`, section label luminance 11→231 ≈ **16:1 contrast**.
-- **Sailfish pass**: `SettingsTone.accent = #6FE3F5` is the only bright colour on the screen —
-  section headings, the `GlowingMark` marks, `GlowingSwitch`, and the slider's active track.
-  The glow is a `Brush.radialGradient` halo, deliberately drawn at ~2× its slot, **not** a blur
-  (no app-owned view to hand a RenderEffect; and a per-frame blur on a scrolling list is wrong).
-- `GlowingSwitch`: glow only when **on** (a switch that shines either way says nothing); off it
-  is near-black with no outline, so the row dims with it. **Thumb is white, not accent** — an
-  accented thumb reads as part of the track rather than as the handle on it.
-- Measured: 26% of the switch column is accent cyan.
+- **Sailfish pass — one accent for the whole app.** `ui/theme/Glow.kt` holds `GlowAccent`
+  (`#6FE3F5`) and every lit control: `GlowingSwitch`, `GlowingCheckbox`, `GlowingRadioButton`,
+  `GlowingSlider`, `GlowingRangeSlider`, `GlowingFilterChip`, `GlowingSegment` /
+  `GlowingSegmentTrack`. **All of them are in the app except the last four** — those exist so
+  the next screen that needs one does not invent its own.
+  - `GlowHalo()` is the shared halo: a `Brush.radialGradient` drawn at ~2× its slot, **never a
+    blur** (no app-owned view for a RenderEffect; a per-frame one is wrong for a scrolling list).
+  - `SettingsTone.accent` now just aliases `GlowAccent`, so settings code reads naturally and
+    there is one value to change.
+  - **Unticked controls are rings, not gaps** — they go near-black but keep a faint outline. A
+    switch that vanishes when off is a switch you cannot find.
+  - **Slider thumb is white, track is accent.** An accented thumb reads as part of the track.
+- Measured on device: settings switch column 7.56% accent, favourites checkbox column 1.18%
+  (a small square yields less than a switch pill), sections-list mark column 4.91%.
 - The page has one soft radial light behind the marks, falling off to true black by the bottom
   of the list. It only shows because **`Scaffold(containerColor = Color.Transparent)`** and the
   page colour is painted by the outer `Box` — an opaque container is a wall.
