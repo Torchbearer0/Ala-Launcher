@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Victoria Launcher</string>
-    <string name="accessibility_description">Lets the swipe-down gesture open the notification shade. Victoria Launcher does not read or act on screen content.</string>
+    <string name="app_name">Ala Launcher</string>
+    <string name="accessibility_description">Lets the swipe-down gesture open the notification shade. Ala Launcher does not read or act on screen content.</string>
 
     <!-- Shared actions -->
     <string name="action_back">Back</string>
@@ -15,7 +15,7 @@
     <string name="action_edit_icon_and_name">Edit icon &amp; name</string>
     <string name="action_move_to_folder">Move to folder…</string>
     <string name="action_change_icon">Change icon…</string>
-    <string name="action_open_settings">Victoria Launcher settings</string>
+    <string name="action_open_settings">Ala Launcher settings</string>
     <string name="action_remove_shortcut">Remove shortcut</string>
 
     <!-- Home screen -->
@@ -59,11 +59,11 @@
     <string name="applist_search">Search apps</string>
 
     <!-- Toasts -->
-    <string name="toast_enable_accessibility_shade">Enable Victoria Launcher in Settings → Accessibility to open notifications</string>
-    <string name="toast_enable_accessibility_lock">Enable Victoria Launcher in Settings → Accessibility to lock the screen</string>
+    <string name="toast_enable_accessibility_shade">Enable Ala Launcher in Settings → Accessibility to open notifications</string>
+    <string name="toast_enable_accessibility_lock">Enable Ala Launcher in Settings → Accessibility to lock the screen</string>
 
     <!-- Settings -->
-    <string name="settings_title">Victoria settings</string>
+    <string name="settings_title">Ala settings</string>
     <string name="settings_section_home">Home screen</string>
     <string name="settings_section_app_list">App list</string>
     <string name="settings_section_gestures">Gestures</string>
@@ -101,6 +101,9 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_apps">Apps</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_credits_built_on">Built on Victoria Launcher</string>
+    <string name="settings_credits_upstream">%1$s by %2$s (%3$s)</string>
+    <string name="settings_credits_licence">Licensed under GPL-3.0-or-later. Victoria Launcher and its author retain their copyright; this is a derivative work.</string>
     <string name="settings_preview_sample">Sample app</string>
     <string name="settings_icon_pack">Icon pack</string>
     <string name="settings_icon_pack_default">Default</string>
@@ -136,7 +139,7 @@
     <string name="settings_edge_side">Which edge opens the app list</string>
     <string name="settings_double_tap_lock">Double-tap to lock screen</string>
     <string name="settings_double_tap_lock_detail">Tap the A-Z strip twice</string>
-    <string name="settings_lock_needs_accessibility">Needs Victoria Launcher enabled under Accessibility. If that switch is greyed out, open App info and allow restricted settings from the ⋮ menu first.</string>
+    <string name="settings_lock_needs_accessibility">Needs Ala Launcher enabled under Accessibility. If that switch is greyed out, open App info and allow restricted settings from the ⋮ menu first.</string>
     <string name="settings_az_visibility">Show A-Z on the home screen</string>
     <string name="az_visibility_never">Never</string>
     <string name="az_visibility_landscape">Landscape</string>
@@ -179,7 +182,7 @@
     <string name="settings_icon_side">Icon side</string>
     <string name="settings_shade_gesture">Swipe down for notifications</string>
     <string name="settings_shade_ready">Ready — pull down on the home screen</string>
-    <string name="settings_shade_not_ready">Pull down on the home screen. If nothing happens, enable Victoria Launcher under Accessibility — and if that switch is greyed out, allow restricted settings from App info first.</string>
+    <string name="settings_shade_not_ready">Pull down on the home screen. If nothing happens, enable Ala Launcher under Accessibility — and if that switch is greyed out, allow restricted settings from App info first.</string>
     <string name="settings_enable">Enable</string>
     <string name="settings_app_info">App info</string>
     <string name="settings_notification_access_granted">Notification access granted</string>
@@ -203,7 +206,7 @@
     <string name="settings_text_shadow">Shadow behind text</string>
     <string name="settings_text_shadow_detail">Helps app names stand out over a busy wallpaper. Applied only behind light text, where it adds contrast rather than muddying it</string>
     <string name="settings_default_launcher">Default launcher</string>
-    <string name="settings_default_launcher_yes">Victoria Launcher</string>
+    <string name="settings_default_launcher_yes">Ala Launcher</string>
     <string name="settings_default_launcher_no">Not set — tap to choose</string>
     <string name="settings_frequent_excluded">Kept out of Most used</string>
     <string name="settings_frequent_excluded_none">No apps kept out</string>
@@ -303,7 +306,7 @@
     <string name="icon_picker_no_matches">No icons match “%1$s”.</string>
 
     <!-- Welcome -->
-    <string name="welcome_title">Welcome to Victoria</string>
+    <string name="welcome_title">Welcome to Ala</string>
     <string name="welcome_favorites">Long-press the wallpaper to add favorites, a widget, or open settings.</string>
     <string name="welcome_widget">Swipe in from either edge of the screen for all your apps, and slide along the A-Z strip to jump to a letter.</string>
     <string name="welcome_layout">Edit layout lets you move things around and set the spacing.</string>
@@ -362,7 +365,7 @@
     <string name="widget_clock_alarm_hide">No alarm</string>
     <string name="widget_clock_agenda_permission">Allow access to your calendar</string>
     <string name="widget_clock_agenda_empty">Nothing coming up</string>
-    <string name="widget_clock_agenda_hint">Reading your calendar needs permission. Nothing leaves the phone: Victoria has no network access.</string>
+    <string name="widget_clock_agenda_hint">Reading your calendar needs permission. Nothing leaves the phone: Ala reads your calendar on the phone and sends it nowhere.</string>
     <string name="widget_clock_weather_opens">What tapping the weather opens</string>
     <string name="widget_clock_weather_forecast">Forecast</string>
     <string name="widget_clock_weather_forecast_reading">%1$s, %2$s</string>
@@ -372,7 +375,7 @@
     <string name="widget_clock_alarm">Alarm</string>
     <string name="widget_clock_alarm_at_icon">Next alarm</string>
     <string name="widget_clock_weather_location">Place</string>
-    <string name="widget_clock_weather_location_hint">A label for this row, so you can tell at a glance which place the weather app is reporting. The weather itself still comes from whichever app you have pointed at a location — Victoria does not fetch it, and never asks where you are.</string>
+    <string name="widget_clock_weather_location_hint">A label for this row, so you can tell at a glance which place the weather app is reporting. The weather itself still comes from whichever app you have pointed at a location — Ala does not fetch it, and never asks where you are.</string>
     <string name="widget_clock_weather_location_none">No label</string>
     <string name="widget_clock_weather_waiting">Waiting for a weather app</string>
     <string name="minus_one_title">Page to the left</string>
@@ -388,7 +391,7 @@
     <string name="minus_one_remove">Remove from page</string>
     <string name="minus_one_change">Change what this page shows</string>
     <string name="minus_one_missing_app">App not installed</string>
-    <string name="widget_clock_weather_hint">Weather comes from a weather app that already has it, so Victoria needs no network access and never asks where you are. In Breezy Weather, turn on Settings → Widgets &amp; Live Wallpaper → Data sharing.</string>
+    <string name="widget_clock_weather_hint">Weather comes from a weather app that already has it, so Ala never asks where you are. In Breezy Weather, turn on Settings → Widgets &amp; Live Wallpaper → Data sharing.</string>
     <string name="widget_clock_notifications_show">Notification count</string>
     <string name="widget_clock_notifications_hide">No count</string>
     <string name="widget_clock_notifications_size">Count size</string>

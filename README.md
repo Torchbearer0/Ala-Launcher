@@ -1,18 +1,19 @@
-# Victoria Launcher
+# Ala Launcher
 
 An open source alternative to [Niagara Launcher](https://niagaralauncher.app) — a
 minimal, list-based Android home screen.
-
-![Victoria Launcher](docs/banner2.png)
 
 ---
 
 ## This repository is a fork
 
-Victoria Launcher was written by [adelmonte](https://github.com/adelmonte/victoria-launcher)
-and is used here under [GPL-3.0-or-later](LICENSE). The original commits, the original
-SPDX headers in every source file and the "forked from" attribution are all kept intact,
-so the history here reads as what it is: someone else's launcher, extended.
+Ala Launcher is **Victoria Launcher**, written by
+[adelmonte](https://github.com/adelmonte), used here under
+[GPL-3.0-or-later](LICENSE) and rebranded. The original commits, the original
+SPDX headers in every source file and the "forked from" attribution are all kept
+intact, so the history here reads as what it is: someone else's launcher, extended.
+The upstream name, its author and the licence travel with it wherever the app is
+listed, including the About screen.
 
 Everything below the divider is upstream's own README. This section is the fork's.
 

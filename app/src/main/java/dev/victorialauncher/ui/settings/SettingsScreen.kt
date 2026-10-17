@@ -1066,6 +1066,25 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
+                        // GPL section 5(a) asks for the credits to travel with the work, and on a
+                        // phone they have to be where someone can actually find them: renaming
+                        // the app is not the same as being allowed to forget where it came from.
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.settings_credits_built_on),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Text(
+                            stringResource(R.string.settings_credits_upstream, UPSTREAM_URL, UPSTREAM_AUTHOR, UPSTREAM_AUTHOR_URL),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Text(
+                            stringResource(R.string.settings_credits_licence),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
                     }
                     // Only after a crash, so there is nothing here to explain the rest of the
                     // time. A launcher draws other apps' widgets with their own code, so the
@@ -1078,7 +1097,7 @@ fun SettingsScreen(
                             label = stringResource(R.string.settings_crash_copy),
                             detail = stringResource(R.string.settings_crash_detail),
                             onClick = {
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Victoria crash", crash))
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Ala crash", crash))
                                 Toast.makeText(context, R.string.settings_crash_copied, Toast.LENGTH_SHORT).show()
                                 CrashLog.clear(context)
                                 crashCleared = true
@@ -1518,6 +1537,16 @@ private fun MinusOneModeRow(selected: MinusOneMode, onSelect: (MinusOneMode) -> 
         }
     }
 }
+
+/**
+ * Where this app came from, for the credits in About.
+ *
+ * Named rather than inlined so the About screen, the README and the F-Droid description cannot
+ * quietly disagree about who wrote the original.
+ */
+private const val UPSTREAM_URL = "github.com/adelmonte/victoria-launcher"
+private const val UPSTREAM_AUTHOR = "adelmonte"
+private const val UPSTREAM_AUTHOR_URL = "github.com/adelmonte"
 
 private fun MinusOneMode.labelRes(): Int = when (this) {
     MinusOneMode.OFF -> R.string.minus_one_mode_off

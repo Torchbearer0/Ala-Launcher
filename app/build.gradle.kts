@@ -26,12 +26,17 @@ android {
     }
 
     defaultConfig {
+        // Deliberately still dev.victorialauncher. The applicationId is this app's identity to
+        // Android, not its name: changing it would be a different app, and everything the user
+        // has already granted or accumulated lives under this one — the notification listener
+        // permission, the allocated widget ids, the DataStore, and any backup taken of it.
         applicationId = "dev.victorialauncher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 107
-        versionName = "0.84.1"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Kept ahead of the last upstream build rather than reset, so installing over the
+        // existing app is an update and not a downgrade Android refuses.
+        versionCode = 108
+        versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
