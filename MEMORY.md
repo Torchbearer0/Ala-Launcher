@@ -80,6 +80,16 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
    `adb pull`, then `System.Drawing.Bitmap` + `GetPixel` in PowerShell. Sample the bounds of a
    text node from a `uiautomator` dump and report min/max luminance — that gives a real
    contrast ratio instead of an opinion. (Never `adb ... > file` for binary; `pull` is fine.)
+   Beware: a scan can land on the app bar and read as "the effect is missing" when it is simply
+   under an opaque header. Scan a column and look at the falloff, not a single point.
+15. **Anything drawn *behind* a `Scaffold` needs the Scaffold's container to be transparent.**
+   An opaque `containerColor` is a wall, and whatever the box underneath drew is invisible.
+16. **The stock widget picker needs a press-hold-then-drag**, which `adb input swipe` cannot
+   produce (it interpolates from the first move, so there is no hold). Don't burn turns trying
+   to add a second widget to test reordering — test the logic as a pure function instead.
+17. **`adb input swipe x y x y 900` is a long press.** And remember a widget's real bounds from
+   the dump before pressing it — pressing at a stale coordinate lands outside the widget and
+   silently does nothing, which reads as a broken gesture.
 
 ## Current state of the -1 page (the page to the left of home)
 
@@ -95,12 +105,22 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 - The page has **its own gradient surface** and the home screen **blurs while it is showing**.
   A launcher cannot blur the wallpaper (it is the window background, not an app-owned view), so
   the scrim is what carries the separation.
+- **`editingIndex` is held by `HomeRoute` (`minusOneEditing`), not by `MinusOnePage`.** BACK is
+  aimed at it with a second `BackHandler` registered *after* the page's, so one press ends the
+  arranging and stays on the page. HOME is handled in `LaunchedEffect(homeIntentTick)`, which
+  closes the page. **Keep the editing state out of the page or BACK reverts to taking both out
+  at once**, which on a launcher looks identical to BACK doing nothing.
 - **Long press an entry to arrange it.** Then:
   - handles appear only on that entry (bottom = height, right = width, corner = both) and are
-    **drawn while it is arranged**, not only while touched; the corner is an L-bracket,
+    **drawn while it is arranged**, not only while touched — each is a circle with an **arrow**
+    along the axis it resizes (across / up / double-headed laid on the diagonal),
   - the **size in dp is shown** at the top of the entry while it is arranged, so it can be
     aimed at a number rather than nudged,
-  - a drag on its middle moves it past a neighbour, one step per 40dp of travel,
+  - a drag on its middle moves it past a neighbour. **Absolute, not incremental**: `dragMove`
+    gets the finger's position in the window, compared against `entryTops` (each entry's
+    `positionInWindow().y`, recorded by `onGloballyPositioned`). The target index is the pure
+    function `dragTargetIndex(heldIndex, centreY, rootY, lastIndex)` — **10 tests in
+    `DragTargetIndexTest`**. Do not go back to a fixed step; that reads as a shuffle.
   - a **cross** in the corner removes it; the **dot** beside it appears **only if the widget's
     provider declares a configure activity** (`AppWidgetProviderInfo.configure != null`) — on
     this device none of the four widgets do, so there is no dot at all,
@@ -126,6 +146,16 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 - The sections list is **one card containing 8 rows**, each with a coloured mark at its left.
   `SettingsRow` grew a `leading` slot for it.
 - Measured: page `0,0,0`, card `0B0B0E`, section label luminance 11→231 ≈ **16:1 contrast**.
+- **Sailfish pass**: `SettingsTone.accent = #6FE3F5` is the only bright colour on the screen —
+  section headings, and the `GlowingMark` marks in the sections list. The glow is a
+  `Brush.radialGradient` halo, deliberately drawn at ~2× its slot, **not** a blur (no
+  app-owned view to hand a RenderEffect; and a per-frame blur on a scrolling list is wrong).
+- The page has one soft radial light behind the marks, falling off to true black by the bottom
+  of the list. It only shows because **`Scaffold(containerColor = Color.Transparent)`** and the
+  page colour is painted by the outer `Box` — an opaque container is a wall.
+- Cards get a 1dp horizontal-gradient rim on their top edge so a flat panel reads as raised.
+- Measured: light from `(18,26,28)` under the app bar to `(0,0,0)` lower down; cards `0B0B0E`;
+  labels still 11→231.
 
 ## Still outstanding
 
