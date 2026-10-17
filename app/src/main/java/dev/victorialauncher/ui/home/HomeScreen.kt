@@ -124,8 +124,6 @@ import dev.victorialauncher.data.IconSide
 import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.folderToken
 import dev.victorialauncher.data.PaddingSlot
-import dev.victorialauncher.media.NowPlayingWidget
-import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.HapticUtil
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.victorialauncher.ui.common.AppIcon
@@ -229,9 +227,6 @@ fun HomeScreen(
     widgetPosition: Int,
     widgetHeightDp: Int,
     hapticsEnabled: Boolean,
-    nowPlayingEnabled: Boolean,
-    nowPlayingHeightDp: Int,
-    onResizeNowPlaying: (Int) -> Unit,
     widgetActions: WidgetSlotActions,
     onLaunch: (AppInfo) -> Unit,
     /**
@@ -253,7 +248,6 @@ fun HomeScreen(
     onReorderHome: (newFavoriteKeys: List<String>, newWidgetPosition: Int) -> Unit,
     onCommitPadding: (PaddingSlot, Int) -> Unit,
     onFavoritesBoundsChanged: (topPx: Float, bottomPx: Float) -> Unit,
-    nowPlayingHasContent: Boolean,
     contentColor: Color,
     showFavoriteLabels: Boolean,
     /** Reports whether a long-press app menu is open, so the home screen can blur behind it. */
@@ -309,8 +303,6 @@ fun HomeScreen(
     var renameDialogFor by remember { mutableStateOf<AppInfo?>(null) }
     var folderMenuFor by remember { mutableStateOf<String?>(null) }
     var folderRenameFor by remember { mutableStateOf<Folder?>(null) }
-    var nowPlayingMenu by remember { mutableStateOf(false) }
-    var nowPlayingMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var expandedFolders by remember { mutableStateOf(setOf<String>()) }
     val touchPosition = remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
@@ -825,31 +817,10 @@ fun HomeScreen(
             // With no widget on screen there is nothing above the favorites, so Now Playing
             // takes that slot instead.
             //
-            // Kept in edit layout whether or not anything is playing: it has a height and
-            // paddings to set, and silence is no reason to be unable to set them. It is most
-            // often adjusted when it is in the way, which is exactly when the music has stopped.
-            if (!hasWidget && (nowPlayingHasContent || (editMode && nowPlayingEnabled))) {
-                NowPlayingBlock(
-                    editMode = editMode,
-                    showPlaceholder = editMode,
-                    heightDp = nowPlayingHeightDp,
-                    contentColor = contentColor,
-                    alignment = alignment,
-                    iconSide = iconSide,
-                    sidePaddingDp = sidePaddingDp,
-                    padTop = padOf(PaddingSlot.NOW_PLAYING_TOP),
-                    padBottom = padOf(PaddingSlot.NOW_PLAYING_BOTTOM),
-                    touchPosition = touchPosition,
-                    menuExpanded = nowPlayingMenu,
-                    menuOffset = nowPlayingMenuOffset,
-                    onOpenMenu = { offset -> nowPlayingMenuOffset = offset; nowPlayingMenu = true },
-                    onDismissMenu = { nowPlayingMenu = false },
-                    onEditLayout = { nowPlayingMenu = false; onEditModeChange(true) },
-                    onOpenSettings = { nowPlayingMenu = false; onOpenSettings() },
-                    onResize = onResizeNowPlaying,
-                    onSetPadding = { slot, v -> setPadding(slot, v) },
-                )
-            }
+            // No Now Playing block here, and none above the favorites either: the track
+            // that is playing is announced by the notification panel, which is where the
+            // music was always going to be visible, and a second copy of it on the home
+            // screen only reserved height for something that was not there.
 
             if (displayItems.isEmpty() && showEmptyHint) {
                 Column(
@@ -1114,31 +1085,9 @@ notification = notificationPreviewByPackage[item.app.componentName.packageName],
                         onChange = { setPadding(PaddingSlot.WIDGET_BOTTOM, it) },
                         contentColor = contentColor,
                     )
-                    // Now Playing sits between the widget and the favorites, and stays there
-                    // while editing whether or not anything is playing — see the other branch.
-                    if (nowPlayingHasContent || (editMode && nowPlayingEnabled)) {
-                        NowPlayingBlock(
-                            editMode = editMode,
-                            showPlaceholder = editMode,
-                            heightDp = nowPlayingHeightDp,
-                            contentColor = contentColor,
-                            alignment = alignment,
-                            iconSide = iconSide,
-                            sidePaddingDp = sidePaddingDp,
-                            padTop = padOf(PaddingSlot.NOW_PLAYING_TOP),
-                            padBottom = padOf(PaddingSlot.NOW_PLAYING_BOTTOM),
-                            touchPosition = touchPosition,
-                            menuExpanded = nowPlayingMenu,
-                            menuOffset = nowPlayingMenuOffset,
-                            onOpenMenu = { offset -> nowPlayingMenuOffset = offset; nowPlayingMenu = true },
-                            onDismissMenu = { nowPlayingMenu = false },
-                            onEditLayout = { nowPlayingMenu = false; onEditModeChange(true) },
-                            onOpenSettings = { nowPlayingMenu = false; onOpenSettings() },
-                            onResize = onResizeNowPlaying,
-                            onSetPadding = { slot, v -> setPadding(slot, v) },
-                        )
-                    }
-                } else if (index == lastRowIndex) {
+                }
+                // No Now Playing block between the widget and the favorites - see the other branch.
+                if (index == lastRowIndex) {
                     PaddingHandle(
                         editMode = editMode,
                         label = R.string.handle_favorites_bottom,
@@ -1751,103 +1700,6 @@ private fun FolderRow(
             }
         }
     }
-}
-
-/** Now Playing with its own padding handles and height handle. */
-@Composable
-private fun NowPlayingBlock(
-    editMode: Boolean,
-    showPlaceholder: Boolean,
-    heightDp: Int,
-    contentColor: Color,
-    alignment: HomeAlignment,
-    iconSide: IconSide,
-    sidePaddingDp: Int,
-    padTop: Int,
-    padBottom: Int,
-    touchPosition: MutableState<Offset>,
-    menuExpanded: Boolean,
-    menuOffset: DpOffset,
-    onOpenMenu: (DpOffset) -> Unit,
-    onDismissMenu: () -> Unit,
-    onEditLayout: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onResize: (Int) -> Unit,
-    onSetPadding: (PaddingSlot, Int) -> Unit,
-) {
-    val density = LocalDensity.current
-    val context = LocalContext.current
-
-    PaddingHandle(
-        editMode = editMode,
-        label = R.string.handle_now_playing_top,
-        value = padTop,
-        onChange = { onSetPadding(PaddingSlot.NOW_PLAYING_TOP, it) },
-        contentColor = contentColor,
-    )
-    Box {
-        NowPlayingWidget(
-            heightDp = heightDp,
-            contentColor = contentColor,
-            alignment = alignment,
-            showPlaceholder = showPlaceholder,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = sidePaddingDp.dp)
-                .recordTouchPosition(touchPosition)
-                .combinedClickable(
-                    // The transport buttons consume their own taps, so this is only ever the
-                    // card itself — which should get you to what is playing. Say so when it
-                    // can't, rather than leaving a tap that looks ignored.
-                    onClick = {
-                        if (!openNowPlayingApp(context)) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.now_playing_open_failed),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
-                    onLongClick = {
-                        onOpenMenu(
-                            with(density) {
-                                DpOffset(touchPosition.value.x.toDp(), touchPosition.value.y.toDp())
-                            }
-                        )
-                    },
-                ),
-        )
-        TouchAnchoredMenu(expanded = menuExpanded, offset = menuOffset, onDismissRequest = onDismissMenu) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_edit_layout)) },
-                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                onClick = onEditLayout,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_open_settings)) },
-                leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                onClick = onOpenSettings,
-            )
-        }
-    }
-    if (editMode) {
-        Spacer(Modifier.height(6.dp))
-        StepperRow(
-            label = stringResource(R.string.handle_now_playing_height),
-            value = heightDp,
-            range = 48..220,
-            step = HEIGHT_STEP_DP,
-            onChange = onResize,
-            contentColor = contentColor,
-        )
-    }
-    PaddingHandle(
-        editMode = editMode,
-        label = R.string.handle_now_playing_bottom,
-        value = padBottom,
-        onChange = { onSetPadding(PaddingSlot.NOW_PLAYING_BOTTOM, it) },
-        contentColor = contentColor,
-    )
 }
 @Composable
 // Not private: the A-Z list draws folders too, and a second implementation of a folder's

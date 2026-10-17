@@ -60,7 +60,7 @@ import androidx.compose.ui.res.stringResource
 import dev.victorialauncher.R
 import dev.victorialauncher.data.folderIdFromToken
 import dev.victorialauncher.data.stripsOtherProfiles
-import dev.victorialauncher.media.isListenerEnabled
+
 import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.common.IconPickerScreen
 import dev.victorialauncher.ui.common.IconStyle
@@ -309,7 +309,6 @@ fun VictoriaNavHost(
     val labelSizeSp by app.prefs.labelSizeSp.collectAsState(initial = 16)
     val itemSpacingDp by app.prefs.itemSpacingDp.collectAsState(initial = 10)
     val sidePaddingDp by app.prefs.sidePaddingDp.collectAsState(initial = 20)
-    val nowPlayingHeightDp by app.prefs.nowPlayingHeightDp.collectAsState(initial = 64)
     val homePaddings by app.prefs.homePaddings.collectAsState(initial = HomePaddings.Default)
     val edgeSide by app.prefs.edgeSide.collectAsState(initial = EdgeSide.RIGHT)
     val azStripVisibility by app.prefs.azStripVisibility.collectAsState(initial = AzStripVisibility.NEVER)
@@ -324,7 +323,6 @@ fun VictoriaNavHost(
     val widgetId by app.prefs.widgetId.collectAsState(initial = -1)
     val widgetPosition by app.prefs.widgetPosition.collectAsState(initial = 0)
     val widgetHeightDp by app.prefs.widgetHeightDp.collectAsState(initial = 180)
-    val nowPlayingEnabled by app.prefs.nowPlayingEnabled.collectAsState(initial = false)
     val folders by app.prefs.folders.collectAsState(initial = emptyList())
     val widgetIds by app.prefs.widgetIds.collectAsState(initial = emptyList())
     val widgetSidePaddingDp by app.prefs.widgetSidePaddingDp.collectAsState(initial = sidePaddingDp)
@@ -521,8 +519,6 @@ fun VictoriaNavHost(
         labelSizeSp = labelSizeSp,
         itemSpacingDp = itemSpacingDp,
         sidePaddingDp = sidePaddingDp,
-        nowPlayingHeightDp = nowPlayingHeightDp,
-        nowPlayingEnabled = nowPlayingEnabled,
         edgeSide = edgeSide,
         azStripVisibility = azStripVisibility,
         shortcutSwipe = shortcutSwipe,
@@ -731,7 +727,6 @@ fun VictoriaNavHost(
 
         composable("settings") {
             val iconPacks = remember { app.iconPackRepository.getInstalledIconPacks() }
-            val listenerEnabled = remember(homeIntentTick) { isListenerEnabled(context) }
             SettingsScreen(
                 hiddenCount = hiddenShownCount,
                 iconPacks = iconPacks,
@@ -833,8 +828,6 @@ fun VictoriaNavHost(
                 alignment = alignment,
                 appListAlignment = appListAlignment,
                 iconSide = iconSide,
-                nowPlayingEnabled = nowPlayingEnabled,
-                nowPlayingListenerEnabled = listenerEnabled,
                 onSetIconPack = { scope.launch { app.prefs.setIconPackPackage(it) } },
                 onSetShowAppIcons = { scope.launch { app.prefs.setShowAppIcons(it) } },
                 onSetIconSize = { scope.launch { app.prefs.setIconSizeDp(it) } },
@@ -930,7 +923,6 @@ fun VictoriaNavHost(
                 onSetAlignment = { scope.launch { app.prefs.setAlignment(it) } },
                 onSetAppListAlignment = { scope.launch { app.prefs.setAppListAlignment(it) } },
                 onSetIconSide = { scope.launch { app.prefs.setIconSide(it) } },
-                onSetNowPlayingEnabled = { scope.launch { app.prefs.setNowPlayingEnabled(it) } },
                 shadeGestureReady = remember(homeIntentTick) { SystemUi.canExpandShade() },
                 lockGestureReady = remember(homeIntentTick) { SystemUi.canLockScreen() },
                 onOpenAccessibilitySettings = {

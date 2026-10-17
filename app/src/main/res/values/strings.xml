@@ -182,7 +182,6 @@
     <string name="settings_shade_not_ready">Pull down on the home screen. If nothing happens, enable Victoria Launcher under Accessibility — and if that switch is greyed out, allow restricted settings from App info first.</string>
     <string name="settings_enable">Enable</string>
     <string name="settings_app_info">App info</string>
-    <string name="settings_now_playing_show">Show Now Playing widget</string>
     <string name="settings_notification_access_granted">Notification access granted</string>
     <string name="settings_notification_access_missing">Notification access not granted</string>
     <string name="settings_notification_access_detail">Needed to show the currently playing track</string>
@@ -404,13 +403,6 @@
     <string name="shortcut_unpin_failed">Couldn\'t remove the shortcut</string>
 
     <!-- Now Playing -->
-    <string name="now_playing_placeholder">Now Playing</string>
-    <string name="now_playing_enable_access">Enable Now Playing access</string>
-    <string name="now_playing_open_failed">Can\'t open the app that\'s playing</string>
-    <string name="now_playing_unknown_title">Unknown title</string>
-    <string name="now_playing_previous">Previous</string>
-    <string name="now_playing_play_pause">Play/pause</string>
-    <string name="now_playing_next">Next</string>
     <plurals name="widget_clock_notification_count">
         <item quantity="one">%1$d notification</item>
         <item quantity="other">%1$d notifications</item>

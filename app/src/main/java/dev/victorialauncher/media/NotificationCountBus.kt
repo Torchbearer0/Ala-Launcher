@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * How many notifications each package is currently showing.
  *
- * Bridges the NotificationListenerService to the UI for the same reason [NowPlayingBus] does:
+ * Bridges the NotificationListenerService to the UI for the same reason [NotificationBus] does:
  * the system owns the service and hands the app no handle to it.
  *
  * A count and nothing else. The text of a notification is the notification's business, and a

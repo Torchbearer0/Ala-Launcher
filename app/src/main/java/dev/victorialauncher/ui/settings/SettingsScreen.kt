@@ -57,6 +57,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import dev.victorialauncher.ui.theme.fontFamilyOf
+import dev.victorialauncher.media.isListenerEnabled
+
 import dev.victorialauncher.ui.theme.rememberWallpaperPalette
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.Color
@@ -142,8 +144,6 @@ fun SettingsScreen(
     alignment: HomeAlignment,
     appListAlignment: HomeAlignment,
     iconSide: IconSide,
-    nowPlayingEnabled: Boolean,
-    nowPlayingListenerEnabled: Boolean,
     showAppIcons: Boolean,
     showFavoriteIcons: Boolean,
     onSetShowFavoriteIcons: (Boolean) -> Unit,
@@ -251,7 +251,6 @@ fun SettingsScreen(
     onSetAlignment: (HomeAlignment) -> Unit,
     onSetAppListAlignment: (HomeAlignment) -> Unit,
     onSetIconSide: (IconSide) -> Unit,
-    onSetNowPlayingEnabled: (Boolean) -> Unit,
     shadeGestureReady: Boolean,
     lockGestureReady: Boolean,
     onOpenAccessibilitySettings: () -> Unit,
@@ -801,9 +800,6 @@ fun SettingsScreen(
                 checked = notificationBadges, onCheckedChange = onSetNotificationBadges,
             )
         },
-        SettingsEntry(SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_now_playing_show), "media music") {
-            SwitchRow(stringResource(R.string.settings_now_playing_show), nowPlayingEnabled, onSetNowPlayingEnabled)
-        },
         SettingsEntry(SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_notification_list), "notification list") {
             SwitchRowWithDetail(
                 label = stringResource(R.string.settings_notification_list),
@@ -820,7 +816,7 @@ fun SettingsScreen(
         },
         SettingsEntry(
             SettingsSection.NOTIFICATIONS, stringResource(R.string.settings_notification_access_detail), "permission access",
-            visible = nowPlayingEnabled || notificationBadges,
+            visible = notificationBadges,
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -829,7 +825,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text(
                         stringResource(
-                            if (nowPlayingListenerEnabled) R.string.settings_notification_access_granted
+                            if (isListenerEnabled(context)) R.string.settings_notification_access_granted
                             else R.string.settings_notification_access_missing
                         ),
                         style = MaterialTheme.typography.bodyMedium,

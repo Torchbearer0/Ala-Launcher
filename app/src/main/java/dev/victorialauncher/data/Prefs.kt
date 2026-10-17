@@ -111,9 +111,6 @@ class Prefs(private val context: Context) {
         val LABEL_SIZE_SP = intPreferencesKey("label_size_sp")
         val ITEM_SPACING_DP = intPreferencesKey("item_spacing_dp")
         val SIDE_PADDING_DP = intPreferencesKey("side_padding_dp")
-        val NOW_PLAYING_HEIGHT_DP = intPreferencesKey("now_playing_height_dp")
-        val NOW_PLAYING_PAD_TOP = intPreferencesKey("now_playing_pad_top")
-        val NOW_PLAYING_PAD_BOTTOM = intPreferencesKey("now_playing_pad_bottom")
         val WIDGET_PAD_TOP = intPreferencesKey("widget_pad_top")
         val WIDGET_PAD_BOTTOM = intPreferencesKey("widget_pad_bottom")
         val FAVORITES_PAD_TOP = intPreferencesKey("favorites_pad_top")
@@ -141,7 +138,6 @@ class Prefs(private val context: Context) {
         val SHOW_ALPHABET = booleanPreferencesKey("show_alphabet")
         val ALIGN_RIGHT = booleanPreferencesKey("align_right")
         val ICON_PACK_PACKAGE = stringPreferencesKey("icon_pack_package")
-        val NOW_PLAYING_ENABLED = booleanPreferencesKey("now_playing_enabled")
         val WIDGET_ID = intPreferencesKey("widget_id")
         val WIDGET_POSITION = intPreferencesKey("widget_position")
         val WIDGET_HEIGHT_DP = intPreferencesKey("widget_height_dp")
@@ -202,8 +198,6 @@ class Prefs(private val context: Context) {
 
     /** Every padding a user can set by hand; their presence is what retires the first-run layout. */
     private val padKeys = listOf(
-        Keys.NOW_PLAYING_PAD_TOP,
-        Keys.NOW_PLAYING_PAD_BOTTOM,
         Keys.WIDGET_PAD_TOP,
         Keys.WIDGET_PAD_BOTTOM,
         Keys.FAVORITES_PAD_TOP,
@@ -357,13 +351,9 @@ class Prefs(private val context: Context) {
     /** Left/right inset applied to every element on the home screen, so they stay in line. */
     val sidePaddingDp: Flow<Int> = data.map { it[Keys.SIDE_PADDING_DP] ?: 20 }.distinctUntilChanged()
 
-    val nowPlayingHeightDp: Flow<Int> = data.map { it[Keys.NOW_PLAYING_HEIGHT_DP] ?: 64 }.distinctUntilChanged()
-
     /** Draggable top/bottom padding for each home block, set in edit mode. */
     val homePaddings: Flow<HomePaddings> = data.map {
         HomePaddings(
-            nowPlayingTop = it[Keys.NOW_PLAYING_PAD_TOP] ?: 8,
-            nowPlayingBottom = it[Keys.NOW_PLAYING_PAD_BOTTOM] ?: 8,
             widgetTop = it[Keys.WIDGET_PAD_TOP] ?: 8,
             widgetBottom = it[Keys.WIDGET_PAD_BOTTOM] ?: 8,
             favoritesTop = it[Keys.FAVORITES_PAD_TOP] ?: 8,
@@ -479,8 +469,6 @@ class Prefs(private val context: Context) {
     val alignRight: Flow<Boolean> = data.map { it[Keys.ALIGN_RIGHT] ?: false }.distinctUntilChanged()
 
     val iconPackPackage: Flow<String?> = data.map { it[Keys.ICON_PACK_PACKAGE] }.distinctUntilChanged()
-
-    val nowPlayingEnabled: Flow<Boolean> = data.map { it[Keys.NOW_PLAYING_ENABLED] ?: false }.distinctUntilChanged()
 
     val widgetId: Flow<Int> = data.map { it[Keys.WIDGET_ID] ?: -1 }.distinctUntilChanged()
     /** Index into the merged (favorites + widget) home list where the widget sits. 0 = top. */
@@ -1033,14 +1021,8 @@ class Prefs(private val context: Context) {
         context.dataStore.edit { it[Keys.ITEM_SPACING_DP] = v }
     }
 
-    suspend fun setNowPlayingHeightDp(v: Int) {
-        context.dataStore.edit { it[Keys.NOW_PLAYING_HEIGHT_DP] = v }
-    }
-
     suspend fun setHomePadding(slot: PaddingSlot, v: Int) {
         val key = when (slot) {
-            PaddingSlot.NOW_PLAYING_TOP -> Keys.NOW_PLAYING_PAD_TOP
-            PaddingSlot.NOW_PLAYING_BOTTOM -> Keys.NOW_PLAYING_PAD_BOTTOM
             PaddingSlot.WIDGET_TOP -> Keys.WIDGET_PAD_TOP
             PaddingSlot.WIDGET_BOTTOM -> Keys.WIDGET_PAD_BOTTOM
             PaddingSlot.FAVORITES_TOP -> Keys.FAVORITES_PAD_TOP
@@ -1147,10 +1129,6 @@ class Prefs(private val context: Context) {
 
     suspend fun setWidgetId(id: Int) {
         context.dataStore.edit { it[Keys.WIDGET_ID] = id }
-    }
-
-    suspend fun setNowPlayingEnabled(v: Boolean) {
-        context.dataStore.edit { it[Keys.NOW_PLAYING_ENABLED] = v }
     }
 
     suspend fun setWidgetPosition(v: Int) {

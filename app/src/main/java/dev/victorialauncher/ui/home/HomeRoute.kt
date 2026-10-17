@@ -75,13 +75,12 @@ import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.QuickLaunchSlot
 import dev.victorialauncher.data.PaddingSlot
 import dev.victorialauncher.data.folderToken
-import dev.victorialauncher.media.NowPlayingBus
+
 import dev.victorialauncher.media.NotificationBus
 import dev.victorialauncher.media.NotificationActionEntry
 import dev.victorialauncher.media.NowPlayingListenerService
 import dev.victorialauncher.ui.notifications.NotificationPanel
 import dev.victorialauncher.ui.common.AppPanel
-import dev.victorialauncher.media.isListenerEnabled
 import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.applist.AppListModel
 import dev.victorialauncher.ui.applist.AppListScreen
@@ -315,11 +314,9 @@ fun HomeRoute(
     var homeEditMode by remember { mutableStateOf(false) }
     var folderPickerFor by remember { mutableStateOf<AppInfo?>(null) }
 
-    val nowPlaying by NowPlayingBus.state.collectAsState()
-    val listenerGranted = remember(homeIntentTick) { isListenerEnabled(context) }
-    // Don't reserve the block (or its padding) unless there is something to render:
-    // no live session means the whole thing collapses, padding included.
-    val nowPlayingHasContent = settings.nowPlayingEnabled && (!listenerGranted || nowPlaying != null)
+    // The Now Playing block on the home screen is gone: playback is available from the
+    // notification panel, so the block only ever reserved space for something you could
+    // already see elsewhere.
     // While the band is being edited the live value wins; otherwise a range the user set by
     // hand wins over the measured favorites, which is what makes it stop following them.
     var bandEditMode by remember { mutableStateOf(false) }
@@ -814,9 +811,7 @@ fun HomeRoute(
                 widgetPosition = widgetPosition,
                 widgetHeightDp = widgetHeightDp,
                 hapticsEnabled = settings.hapticsEnabled,
-                nowPlayingEnabled = settings.nowPlayingEnabled,
-                nowPlayingHeightDp = settings.nowPlayingHeightDp,
-                onResizeNowPlaying = { scope.launch { app.prefs.setNowPlayingHeightDp(it) } },
+
                 widgetActions = widgetActions,
                 onLaunch = { launchEntry(it) },
                 onOpenPanel = { app, top, left -> panelFor = Triple(app, top, left) },
@@ -879,7 +874,6 @@ fun HomeRoute(
                         minHeightPx = minBandHeightPx,
                     )
                 },
-                nowPlayingHasContent = nowPlayingHasContent,
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
                 onMenuOpen = { homeMenuOpen = it },
@@ -1310,8 +1304,6 @@ data class HomeSettings(
     val labelSizeSp: Int,
     val itemSpacingDp: Int,
     val sidePaddingDp: Int,
-    val nowPlayingHeightDp: Int,
-    val nowPlayingEnabled: Boolean,
     val edgeSide: EdgeSide,
     val azStripVisibility: AzStripVisibility,
     val shortcutSwipe: ShortcutSwipe,
