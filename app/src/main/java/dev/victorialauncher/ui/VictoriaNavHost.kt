@@ -597,26 +597,10 @@ fun VictoriaNavHost(
         pendingIconTarget = null
     }
 
-    // Which surface asked for the widget. The picker is one screen and returns one id, and the two
-// callers mean different things by it: the home screen's slot takes it as another page in its
-// own pager, the left-hand page takes it as another row in its stack.
-var minusOneWidgetPicker by remember { mutableStateOf(false) }
-val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val toMinusOne = minusOneWidgetPicker
-        minusOneWidgetPicker = false
+    val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             val id = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
-            // Appended rather than replacing: picking a widget now adds a page.
-            if (id != -1) scope.launch {
-                if (toMinusOne) {
-                    app.prefs.setMinusOne(
-                        minusOne.mode,
-                        minusOne.entries + MinusOneEntry.Widget(id, MINUS_ONE_NEW_WIDGET_HEIGHT_DP),
-                    )
-                } else {
-                    app.prefs.addWidgetId(id)
-                }
-            }
+            if (id != -1) scope.launch { app.prefs.addWidgetId(id) }
         }
     }
 
@@ -714,10 +698,6 @@ val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContr
                 widgetPosition = widgetPosition,
                 widgetHeightDp = widgetHeightDp,
                 widgetActions = widgetActions,
-                onAddWidgetToMinusOne = {
-                    minusOneWidgetPicker = true
-                    widgetActions.onAddWidget(null)
-                },
                 launchCounts = launchCounts,
                 // Both flows start at a value that shows nothing, so the dialog can't flash
                 // before the stored answer arrives. A legacy install is stamped 0 and never
@@ -998,15 +978,6 @@ val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContr
                 frequentExcludedVisible = favoritesSource == FavoritesSource.FREQUENT,
                 onOpenFrequentExcluded = { navController.navigate("settings/frequentexcluded") },
                 onOpenFavorites = { navController.navigate("favorites") },
-                minusOneMode = minusOne.mode,
-                // Turning the page off drops whatever was on it: setting it up again should be
-                // a deliberate act, not a page that quietly reappeared with a stack nobody was
-                // told had been kept.
-                onSetMinusOneMode = { mode ->
-                    scope.launch {
-                        app.prefs.setMinusOne(mode, if (mode == minusOne.mode) minusOne.entries else emptyList())
-                    }
-                },
                 onOpenNotificationSettings = {
                     context.startActivity(
                         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)

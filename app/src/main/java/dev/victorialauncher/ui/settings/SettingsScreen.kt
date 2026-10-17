@@ -280,8 +280,6 @@ fun SettingsScreen(
     frequentExcludedVisible: Boolean,
     onOpenFrequentExcluded: () -> Unit,
     onOpenFavorites: () -> Unit,
-    minusOneMode: MinusOneMode,
-    onSetMinusOneMode: (MinusOneMode) -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -435,9 +433,6 @@ fun SettingsScreen(
         ) { DimColorRow(dimColor, onSetDimColor) },
 
         // ---- Home screen ----
-        SettingsEntry(SettingsSection.HOME, stringResource(R.string.minus_one_title), "left page") {
-            MinusOneModeRow(minusOneMode, onSetMinusOneMode)
-        },
         SettingsEntry(SettingsSection.HOME, stringResource(R.string.settings_favorites_source), "frequent most used manual") {
             FavoritesSourceRow(favoritesSource, frequentCount, onSetFavoritesSource, onSetFrequentCount)
         },
@@ -1506,33 +1501,6 @@ private fun TextColorRow(
  * list they search, which meant knowing the implementation to find anything.
  */
 /**
- * Which of the three things the page to the left of home can be.
- *
- * Chips rather than a switch, because there is no on/off version of this: a page that was turned
- * on but not told what to show would be a blank screen reached by a swipe, which is worse than no
- * page at all. The same shape the edge side and icon side use for their own few options.
- */
-@Composable
-private fun MinusOneModeRow(selected: MinusOneMode, onSelect: (MinusOneMode) -> Unit) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(stringResource(R.string.minus_one_title), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            stringResource(R.string.minus_one_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            MinusOneMode.entries.forEach { mode ->
-                FilledChip(stringResource(mode.labelRes()), selected == mode) { onSelect(mode) }
-            }
-        }
-    }
-}
-
-/**
  * Where this app came from, for the credits in About.
  *
  * Named rather than inlined so the About screen, the README and the F-Droid description cannot
@@ -1542,11 +1510,6 @@ private const val UPSTREAM_URL = "github.com/adelmonte/victoria-launcher"
 private const val UPSTREAM_AUTHOR = "adelmonte"
 private const val UPSTREAM_AUTHOR_URL = "github.com/adelmonte"
 
-private fun MinusOneMode.labelRes(): Int = when (this) {
-    MinusOneMode.OFF -> R.string.minus_one_mode_off
-    MinusOneMode.DISCOVER -> R.string.minus_one_mode_discover
-    MinusOneMode.WIDGETS -> R.string.minus_one_mode_widgets
-}
 
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     APPEARANCE(R.string.settings_section_appearance, Icons.Filled.Palette),

@@ -77,9 +77,6 @@ import dev.victorialauncher.data.Folder
 import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.QuickLaunchSlot
 import dev.victorialauncher.data.PaddingSlot
-import dev.victorialauncher.data.MinusOneEntry
-import dev.victorialauncher.data.MinusOneMode
-import dev.victorialauncher.data.MinusOnePage
 import dev.victorialauncher.data.withSize
 import dev.victorialauncher.data.withPosition
 import kotlinx.coroutines.flow.first
@@ -190,7 +187,6 @@ fun HomeRoute(
      * the left, which is the difference between a new row in its stack and a new page in the
      * home screen's own pager.
      */
-    onAddWidgetToMinusOne: () -> Unit,
     launchCounts: Map<String, Int>,
     showWelcome: Boolean,
     onWelcomeDismissed: () -> Unit,
@@ -301,19 +297,15 @@ fun HomeRoute(
     // Which app's panel the swipe opened, or null. Held by the destination because the strip
     // and the edge zones are drawn here, after HomeScreen, and would cover a panel drawn there.
     var panelFor by remember { mutableStateOf<Triple<AppInfo, Dp, Dp>?>(null) }
-    val minusOne by app.prefs.minusOne.collectAsState(initial = MinusOnePage())
-    var minusOneVisible by remember { mutableStateOf(false) }
 
     // True while a handle on the page is being dragged. A handle drag is a horizontal drag on
     // the page, and without this the page's own swipe-to-dismiss reads it as a sideways fling
     // and closes the page halfway through a resize.
-    var minusOneArranging by remember { mutableStateOf(false) }
 
     // Which entry on the page is being arranged, held here rather than inside the page so that
     // BACK can be aimed at it. Left inside, the page's own BACK handler closed the page and the
     // arrangement with it in one press, and since closing the page lands on the home screen,
     // one BACK from arranging looked exactly like a BACK that did nothing.
-    var minusOneEditing by remember { mutableStateOf<Int?>(null) }
     val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = false)
     val notifications by NotificationBus.notifications.collectAsState()
 
@@ -561,14 +553,6 @@ fun HomeRoute(
     }
     LaunchedEffect(homeIntentTick) {
         if (homeIntentTick > 0) closeAppList(snap = true)
-        // HOME has to leave the page too, or the home gesture on the page leaves the page
-        // showing - which on a launcher is the same screen it came from, so the gesture looks
-        // like it did nothing at all. Any arranging stops with it: the page is leaving.
-        if (homeIntentTick > 0 && minusOneVisible) {
-            minusOneArranging = false
-            minusOneEditing = null
-            minusOneVisible = false
-        }
     }
 
     // The gap left for the back gesture, per side. Followed from the system when automatic,
@@ -577,6 +561,16 @@ fun HomeRoute(
     val gestureInsets = WindowInsets.systemGestures
     val layoutDirection = LocalLayoutDirection.current
     val densityNow = LocalDensity.current
+
+    // Whether the edges belong to the launcher or to the system, recomputed whenever either
+    // moves. While the notification panel is up the system owns them outright.
+    //
+    // Android's back-gesture claims the outer edges and honours a budget of 200dp of exclusion
+    // per side, and that budget is spent here on the A-Z scrub band - right on the home screen,
+    // wrong on top of a full-screen place. Holding both edges for the launcher meant the system
+    // back-gesture never arrived, so the only way out of the panel was HOME, which on a
+    // launcher is the screen you were already standing on.
+    val edgesAreSystems = notificationPanelVisible
     val insetLeftDp = if (settings.edgeZoneInsetAuto) {
         with(densityNow) { gestureInsets.getLeft(this, layoutDirection).toDp().value.roundToInt() }
     } else {
@@ -596,7 +590,6 @@ fun HomeRoute(
 
     // Whether the edges belong to the launcher or to the system, recomputed whenever either
     // moves. While one of the full-screen places is up the system owns them outright.
-    val edgesAreSystems = notificationPanelVisible || minusOneVisible
 
     LaunchedEffect(
         settings.edgeSide,
@@ -747,7 +740,6 @@ fun HomeRoute(
                 // actually showing. Without this the page's widgets land straight on a sharp
                 // home screen and read as part of it rather than as somewhere else; the blur is
                 // what says "this is a different place".
-                minusOneVisible -> 14.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
@@ -936,14 +928,6 @@ fun HomeRoute(
                 },
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
-                minusOneEnabled = minusOne.mode != MinusOneMode.OFF,
-                onOpenMinusOne = {
-                    minusOneVisible = true
-                    // Discover has nothing to draw here - it is the Google app, not a feed of
-                    // ours - so reaching the page is the whole gesture and the app opens with
-                    // it. Asking for a button first made the page a dead end with a prompt.
-                    if (minusOne.mode == MinusOneMode.DISCOVER) openGoogleApp(context)
-                },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -1162,139 +1146,6 @@ fun HomeRoute(
             )
         }
 
-        // The page to the left of home. Kept composed and unplaced when hidden, the same way the
-        // drawer is, so opening it is not a first composition of a screenful of widgets. Slides
-        // in from the left rather than fading, because it came from a swipe to the left and
-        // leaving by the same gesture reads as the same journey in reverse.
-        val minusOneProgress by animateFloatAsState(
-            targetValue = if (minusOneVisible) 1f else 0f,
-            animationSpec = tween(260, easing = FastOutSlowInEasing),
-            label = "minusOneProgress",
-        )
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    alpha = minusOneProgress
-                    // A layer rather than an offset modifier because it can see its own size,
-                    // and the page's is only known after layout — which is exactly what an
-                    // unplaced overlay measures as zero.
-                    translationX = -(1f - minusOneProgress) * size.width
-                }
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    if (minusOneVisible) {
-                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                    } else {
-                        layout(0, 0) {}
-                    }
-                }
-                // A decisive drag either way closes the page, because there is nothing else on it for a
-                // sideways drag to mean: its content is one vertical stack, and the entries in
-                // it answer to a long press rather than a drag. Counting only the direction that
-                // opened it left the obvious way out — dragging back the way you came, which
-                // on a page that sits to the left is a drag to the *left* — doing nothing, and
-                // BACK as the only reliable exit.
-                //
-                // Keyed on `minusOneArranging` so that lifting a handle mid-drag cancels the
-                // gesture that was already in flight. Without that the drag that began on a
-                // resize handle still ended as a sideways fling, and closed the page.
-                .pointerInput(minusOneArranging) {
-                    if (!minusOneVisible) return@pointerInput
-                    val threshold = with(density) { 72.dp.toPx() }
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        var travelled = 0f
-                        var dismissed = false
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            travelled = change.position.x - down.position.x
-                            // Consumed only once this is a drag that actually closes the page.
-                            // Consuming every move instead took the touch stream from everything
-                            // under it — a widget on this page could not scroll, and a drag to
-                            // move an entry was swallowed before it reached the entry.
-                            if (kotlin.math.abs(travelled) > threshold) {
-                                change.consume()
-                                dismissed = true
-                                break
-                            }
-                        }
-                        if (dismissed) minusOneVisible = false
-                    }
-                },
-        ) {
-            fun updateEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
-                // Read inside the coroutine rather than using the snapshot this composition was
-                // built with. A drag writes several times in a few hundred milliseconds - a
-                // reorder for every neighbour the finger passes, and then a final position -
-                // and each of those was applied to the list as it was when the page opened.
-                // They overwrote one another, and the last write won with a list that described
-                // nothing that had just happened, so the drag ended up storing no change at all.
-                scope.launch {
-                    val current = app.prefs.minusOne.first()
-                    app.prefs.setMinusOne(current.mode, transform(current.entries))
-                }
-            }
-
-            MinusOnePage(
-                page = minusOne,
-                appsByKey = appsByKey,
-                contentColor = settings.contentColor,
-                onAddWidget = onAddWidgetToMinusOne,
-                onResize = { index, widthDp, heightDp ->
-                    updateEntries { entries ->
-                        val entry = entries.getOrNull(index) ?: return@updateEntries entries
-                        entries.toMutableList().apply { set(index, entry.withSize(widthDp, heightDp)) }
-                    }
-                },
-                onRemove = { index ->
-                    val entry = minusOne.entries.getOrNull(index) ?: return@MinusOnePage
-                    // The host id has to be released, not just forgotten: left allocated, the
-                    // provider keeps broadcasting updates to a widget nobody can see.
-                    if (entry is MinusOneEntry.Widget && entry.widgetId > 0) {
-                        runCatching { app.widgetHost.deleteAppWidgetId(entry.widgetId) }
-                    }
-                    updateEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
-                },
-                onMove = { from, to ->
-                    updateEntries { entries ->
-                        entries.toMutableList().apply { add(to, removeAt(from)) }
-                    }
-                },
-                onPlace = { index, xDp, yDp, pageW, pageH ->
-                    updateEntries { entries ->
-                        val entry = entries.getOrNull(index) ?: return@updateEntries entries
-                        entries.toMutableList().apply {
-                            set(index, entry.withPosition(xDp, yDp, pageW, pageH))
-                        }
-                    }
-                },
-                // Held by the route rather than by the page, so BACK can end an arrangement
-                // without also leaving the page. See where it is declared.
-                editingIndex = minusOneEditing,
-                onEditingChange = { minusOneEditing = it },
-                // Tells the page's own swipe-to-dismiss to stand down while a handle is held.
-                onResizeActiveChange = { minusOneArranging = it },
-                onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
-                onAppInfo = { id -> widgetActions.onAppInfo(id) },
-                onLaunch = { launchEntry(it) },
-                onOpenSettings = { onNavigate("settings") },
-            )
-        }
-
-        // Back leaves the page rather than the launcher. Without this the page is a place the
-        // only way out of is a swipe in one exact direction, and BACK — which the user has just
-        // been pressing to get out of everything else on this screen — would close the app.
-        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
-
-        // Registered after the one above, so while something is being arranged this is the BACK
-        // that runs: one press ends the arranging and leaves the page where it is. Only the
-        // arrangement ends, because a press that also left the page would be the same press
-        // doing two things, and on a launcher that reads as BACK being broken.
-        BackHandler(enabled = minusOneVisible && minusOneEditing != null) {
-            minusOneEditing = null
-        }
 
         // Above everything else, and last, so a pull that opens it cannot be mistaken for a
         // pull that opened the list underneath. Only drawn while open: keeping a full-screen
