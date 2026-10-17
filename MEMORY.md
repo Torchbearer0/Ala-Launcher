@@ -90,6 +90,17 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 17. **`adb input swipe x y x y 900` is a long press.** And remember a widget's real bounds from
    the dump before pressing it — pressing at a stale coordinate lands outside the widget and
    silently does nothing, which reads as a broken gesture.
+18. **`onInterceptTouchEvent` is NOT called for MOVE once a child has the gesture.** A ViewGroup
+   only consults it for the press and while it has no touch target. To see a drag that a child
+   is competing for, override **`dispatchTouchEvent`** — it is called for every event that
+   reaches the view, whichever child handles it. This cost three rounds of dead-end debugging.
+19. **Claim the gesture from ACTION_DOWN, not from your own slop.** If you ignore a drag until
+   it clears your threshold, a scrolling ancestor sees the same threshold cross first and takes
+   the gesture. You then get exactly one MOVE. Symptom: the gesture "half works".
+20. **Never write state from a captured composition snapshot.** `updateEntries` applied each
+   change to the list as it was at composition time, so several writes in a few hundred ms
+   overwrote each other and the last won with stale data. Read the current value **inside the
+   coroutine** (`app.prefs.flow.first()`). Symptom: the UI changes and nothing persists.
 
 ## Current state of the -1 page (the page to the left of home)
 
@@ -116,11 +127,19 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
     along the axis it resizes (across / up / double-headed laid on the diagonal),
   - the **size in dp is shown** at the top of the entry while it is arranged, so it can be
     aimed at a number rather than nudged,
-  - a drag on its middle moves it past a neighbour. **Absolute, not incremental**: `dragMove`
-    gets the finger's position in the window, compared against `entryTops` (each entry's
-    `positionInWindow().y`, recorded by `onGloballyPositioned`). The target index is the pure
-    function `dragTargetIndex(heldIndex, centreY, rootY, lastIndex)` — **10 tests in
-    `DragTargetIndexTest`**. Do not go back to a fixed step; that reads as a shuffle.
+  - a drag on its middle **lifts it out** and carries it under the finger. The finger can go
+    anywhere on the page in **either** direction — the whole point of the lift, since a drag
+    reported as a position inside the widget can never go above its own top edge, which is why
+    down worked and up never could. `dragMove` gives the finger's window Y; the entry's
+    `graphicsLayer` translates it so the grab point stays under the finger.
+    The target index is the pure function `dragTargetIndex(heldIndex, centreY, rootY, lastIndex)`
+    — **10 tests in `DragTargetIndexTest`**. Do not go back to a fixed step; that reads as a shuffle.
+  - **free placement**: entries carry `xDp`/`yDp`; `isPlaced` is true once either is non-zero.
+    Placed entries are drawn by an overlay **outside the scrolling Column** (a position is a
+    place on the page, not in a list) and skipped by the FlowRow. Only written once placed, so
+    nothing moves at upgrade. `withPosition` clamps against the page size passed by the caller.
+    **Known gap: a placed entry can overlap one still in the flow.** Resolving that needs a
+    pass that shifts neighbours out of a dropped entry's band.
   - a **cross** in the corner removes it; the **dot** beside it appears **only if the widget's
     provider declares a configure activity** (`AppWidgetProviderInfo.configure != null`) — on
     this device none of the four widgets do, so there is no dot at all,
@@ -147,9 +166,13 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
   `SettingsRow` grew a `leading` slot for it.
 - Measured: page `0,0,0`, card `0B0B0E`, section label luminance 11→231 ≈ **16:1 contrast**.
 - **Sailfish pass**: `SettingsTone.accent = #6FE3F5` is the only bright colour on the screen —
-  section headings, and the `GlowingMark` marks in the sections list. The glow is a
-  `Brush.radialGradient` halo, deliberately drawn at ~2× its slot, **not** a blur (no
-  app-owned view to hand a RenderEffect; and a per-frame blur on a scrolling list is wrong).
+  section headings, the `GlowingMark` marks, `GlowingSwitch`, and the slider's active track.
+  The glow is a `Brush.radialGradient` halo, deliberately drawn at ~2× its slot, **not** a blur
+  (no app-owned view to hand a RenderEffect; and a per-frame blur on a scrolling list is wrong).
+- `GlowingSwitch`: glow only when **on** (a switch that shines either way says nothing); off it
+  is near-black with no outline, so the row dims with it. **Thumb is white, not accent** — an
+  accented thumb reads as part of the track rather than as the handle on it.
+- Measured: 26% of the switch column is accent cyan.
 - The page has one soft radial light behind the marks, falling off to true black by the bottom
   of the list. It only shows because **`Scaffold(containerColor = Color.Transparent)`** and the
   page colour is painted by the outer `Box` — an opaque container is a wall.
