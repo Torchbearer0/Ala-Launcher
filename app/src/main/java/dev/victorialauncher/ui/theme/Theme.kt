@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
@@ -61,6 +62,37 @@ private val LightColors = lightColorScheme(
     background = Color.Transparent,
     surface = Color(0xFFF3F6F8),
     onSurface = Color(0xFF1B2733),
+)
+
+/**
+ * The scheme for a screen that is black whatever the system is set to.
+ *
+ * The settings screen draws its page in true black, and a black page needs light content on it.
+ * Left on the system scheme, a device in light mode handed it near-black text on that black -
+ * so the darker the page got, the less of it could be read. Fixing the page without fixing the
+ * content is how that happened.
+ *
+ * Derived from [DarkColors] rather than from whatever the system offered, because the point of
+ * an AMOLED screen is that its darkness is predictable. Material You would hand back a palette
+ * derived from the wallpaper, which is the one thing guaranteed not to be black.
+ *
+ * The container slots are filled in rather than left to defaults: on this scheme they default to
+ * greys lighter than the page, and any control that reaches for one - a dialog, a menu, a
+ * dropdown - would float over the black as a slab of the old design.
+ */
+internal fun amoledColorScheme(): ColorScheme = DarkColors.copy(
+    surface = Color.Black,
+    background = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0B0B0E),
+    surfaceContainer = Color(0xFF101216),
+    surfaceContainerHigh = Color(0xFF16181C),
+    surfaceContainerHighest = Color(0xFF1C1F24),
+    surfaceVariant = Color(0xFF1C1F24),
+    onSurfaceVariant = Color(0xFFC2C8CE),
+    outline = Color(0xFF3A4048),
+    outlineVariant = Color(0x14FFFFFF),
+    scrim = Color.Black,
 )
 
 /**

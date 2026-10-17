@@ -42,6 +42,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import android.appwidget.AppWidgetManager
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -264,6 +265,19 @@ private fun WidgetStackPage(
     // position moves with the scroll and with every other entry in the wrapping row.
     var menuAnchor by remember { mutableStateOf(Offset.Zero) }
 
+    // Which widgets actually have an options screen of their own. A provider that declares none
+    // leaves AppWidgetProviderInfo.configure null, and asking for one hands the user to a system
+    // activity that has nothing to show and finishes immediately - which reads as the launcher
+    // throwing them out to the home screen. Rather than guard the hand-off, the button is not
+    // drawn: a widget with nothing to configure has nothing this corner can do.
+    val pageContext = LocalContext.current
+    val appWidgetManager = remember { AppWidgetManager.getInstance(pageContext) }
+    val widgetsWithOptions = remember(entries) {
+        entries.mapNotNull { (it as? MinusOneEntry.Widget)?.widgetId }
+            .filter { id -> id > 0 && appWidgetManager.getAppWidgetInfo(id)?.configure != null }
+            .toSet()
+    }
+
     val density = LocalDensity.current
     // What each entry actually measures, in dp. A full-width entry stores 0 to mean "fill", so
     // its stored width is not a number a drag can be added to — adding a negative delta to it
@@ -412,6 +426,28 @@ private fun WidgetStackPage(
                 )
 
                 if (editing) {
+                    // The size, while it is being changed. A drag is continuous and a widget
+                    // is laid out in whole cells, so without a number to aim at there is no
+                    // saying "make it exactly this" - the best available is to keep nudging
+                    // and hope. Full width is stored as 0, so it is spelled out here.
+                    val liveWidthDp = if (entry.widthDp > 0) entry.widthDp else measuredWidthDp[index]
+                    if (liveWidthDp != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 6.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.Black.copy(alpha = 0.66f))
+                                .padding(horizontal = 12.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                "$liveWidthDp × ${entry.heightDp} dp",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White,
+                            )
+                        }
+                    }
+
                     ResizeHandles(
                         contentColor = contentColor,
                         onDragWidth = { deltaDp ->
@@ -443,7 +479,7 @@ private fun WidgetStackPage(
                             },
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        if (entry is MinusOneEntry.Widget) {
+                        if (entry is MinusOneEntry.Widget && entry.widgetId in widgetsWithOptions) {
                             EditButton(
                                 label = stringResource(R.string.minus_one_more),
                                 onClick = {
@@ -746,6 +782,7 @@ private fun ResizeHandles(
             contentColor = contentColor,
             thickness = HANDLE_CORNER_DP.dp,
             vertical = true,
+            corner = true,
             onDrag = { dx, dy -> onDragCorner(dx.roundToInt(), dy.roundToInt()) },
             onActiveChange = onActiveChange,
         ) { active = Handle.CORNER }
@@ -761,6 +798,8 @@ private fun HandleStrip(
     contentColor: Color,
     thickness: Dp,
     vertical: Boolean,
+    /** Drawn as a corner bracket rather than a bar, the way a photo editor marks its corner. */
+    corner: Boolean = false,
     onDrag: (dxDp: Float, dyDp: Float) -> Unit,
     onActiveChange: (Boolean) -> Unit,
     onStart: () -> Unit,
@@ -771,20 +810,16 @@ private fun HandleStrip(
             val down = awaitFirstDown(requireUnconsumed = false)
             onStart()
             val start = down.position
-            // Consumed here rather than on the first move, and this is the whole reason the
-            // handle works at all: the page lives in a pager, and narrowing an entry by
-            // dragging its right edge inwards is a *leftward* drag — exactly what the pager
-            // reads as "go back to home". Claiming the down is what stops the pager taking a
-            // gesture that was aimed at a resize.
+            // Consumed on the down rather than on the first move. Narrowing an entry by
+            // dragging its right edge inwards is a *leftward* drag, which anything around this
+            // page is entitled to read as "go back". Claiming the down is what stops it taking
+            // a gesture that was aimed at a resize.
             down.consume()
             onActiveChange(true)
             while (true) {
                 // Consumed at the Initial pass, which runs before anything else sees the event.
-                // Consuming in the Main pass is too late to be decisive here: the pager around
-                // this page decides whether a drag is its own from whether the slop-crossing
-                // event is still unconsumed, and by the time an inner handler has consumed
-                // anything in Main that decision has effectively been made. At Initial it has
-                // not.
+                // In the Main pass the decision has already been made by whoever watches for
+                // the slop-crossing event to still be unconsumed.
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
@@ -797,17 +832,46 @@ private fun HandleStrip(
             onStart()
         }
     }, contentAlignment = Alignment.Center) {
+        // Visible while the entry is being arranged, not only while a finger is already on it.
+        // At zero until touched there was nothing on screen saying the edge could be dragged at
+        // all, so the handles were a thing that had to be guessed at.
         val alpha by animateFloatAsState(
-            targetValue = if (active) 1f else 0f,
+            targetValue = if (active) 1f else 0.5f,
             label = "handleAlpha",
         )
-        Box(
-            modifier = Modifier
-                .then(if (vertical) Modifier.width(thickness) else Modifier.height(thickness))
-                .then(if (vertical) Modifier.height(4.dp) else Modifier.width(4.dp))
-                .graphicsLayer { this.alpha = alpha }
-                .background(contentColor.copy(alpha = 0.6f), CircleShape),
-        )
+        val bar = contentColor.copy(alpha = 0.85f)
+        if (corner) {
+            // Two bars meeting at a corner, inset from the edges they mark. Reads as a bracket
+            // rather than a divider, so it is not mistaken for part of the widget underneath.
+            Column(
+                modifier = Modifier.size(thickness),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.End,
+            ) {
+                Box(
+                    Modifier
+                        .width(thickness)
+                        .height(3.dp)
+                        .graphicsLayer { this.alpha = alpha }
+                        .background(bar, RoundedCornerShape(2.dp)),
+                )
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(thickness - 3.dp)
+                        .graphicsLayer { this.alpha = alpha }
+                        .background(bar, RoundedCornerShape(2.dp)),
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .then(if (vertical) Modifier.width(thickness) else Modifier.height(thickness))
+                    .then(if (vertical) Modifier.height(4.dp) else Modifier.width(4.dp))
+                    .graphicsLayer { this.alpha = alpha }
+                    .background(bar, CircleShape),
+            )
+        }
     }
 }
 

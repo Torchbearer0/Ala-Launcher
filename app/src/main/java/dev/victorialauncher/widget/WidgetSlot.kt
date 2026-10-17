@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -285,6 +286,14 @@ internal fun HostedWidget(
 
     // A real long-press (finger held still) opens the edit menu; an ordinary tap or drag
     // still reaches the widget's own view untouched — see LongPressFrameLayout.
+    //
+    // Keyed by widgetId, and not only because a slot may briefly host two ids. Without the key
+    // Compose matched these entries by position alone, and an AndroidView builds its view once
+    // in the factory and never again - so when the list was reordered or an entry removed, the
+    // slot kept drawing whichever widget had been in it before while the entry beside it had
+    // already changed. Long-pressing the top widget then removed the wrong one, because the
+    // index was right and what was under the finger was not.
+    key(widgetId) {
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
@@ -341,4 +350,5 @@ internal fun HostedWidget(
             container.dragEnd = onDragEnd
         },
     )
+    }
 }

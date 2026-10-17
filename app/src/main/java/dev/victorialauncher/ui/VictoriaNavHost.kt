@@ -78,6 +78,7 @@ import dev.victorialauncher.ui.settings.AppPickerScreen
 import dev.victorialauncher.ui.settings.FolderAppsScreen
 import dev.victorialauncher.ui.settings.HiddenAppsScreen
 import dev.victorialauncher.ui.theme.DEFAULT_SHADOW_STRENGTH
+import dev.victorialauncher.ui.theme.amoledColorScheme
 import dev.victorialauncher.ui.settings.ManageFavoritesScreen
 import dev.victorialauncher.ui.settings.SettingsScreen
 import dev.victorialauncher.ui.theme.rememberContentColor
@@ -756,6 +757,10 @@ val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContr
 
         composable("settings") {
             val iconPacks = remember { app.iconPackRepository.getInstalledIconPacks() }
+            // Settings is an AMOLED screen: the page is true black, so the scheme is pinned to
+            // the dark one whatever the system is set to. Scoped to this route rather than to
+            // SettingsScreen itself, so nothing else in the app inherits it.
+            MaterialTheme(colorScheme = amoledColorScheme()) {
             SettingsScreen(
                 hiddenCount = hiddenShownCount,
                 iconPacks = iconPacks,
@@ -1010,6 +1015,7 @@ val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContr
                 },
                 onBack = { navController.popBackStack() },
             )
+            }
         }
 
         composable("favorites") {
