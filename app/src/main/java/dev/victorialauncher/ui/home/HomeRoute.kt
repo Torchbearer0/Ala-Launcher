@@ -594,7 +594,19 @@ fun HomeRoute(
         EdgeSide.BOTH -> maxOf(insetLeftDp, insetRightDp)
     }
 
-    LaunchedEffect(settings.edgeSide, settings.edgeZoneWidthDp, insetLeftDp, insetRightDp, view, band) {
+    // Whether the edges belong to the launcher or to the system, recomputed whenever either
+    // moves. While one of the full-screen places is up the system owns them outright.
+    val edgesAreSystems = notificationPanelVisible || minusOneVisible
+
+    LaunchedEffect(
+        settings.edgeSide,
+        settings.edgeZoneWidthDp,
+        insetLeftDp,
+        insetRightDp,
+        view,
+        band,
+        edgesAreSystems,
+    ) {
         view.post {
             val density = view.resources.displayMetrics.density
             val widthPx = (settings.edgeZoneWidthDp * density).toInt()
@@ -628,6 +640,13 @@ fun HomeRoute(
                 // pulling it in there only made it harder to reach for no gain.
                 val edgeGapPx = if (appListVisible) (EDGE_GAP_DP * density).toInt() else 0
                 val rects = buildList {
+                    // Nothing while a full-screen place is showing. Both the notification panel
+                    // and the page on the left are places you swipe back out of, and the scrub
+                    // band has no business there: holding the outermost pixels for the launcher
+                    // meant the system back-gesture never arrived, so the only way out of either
+                    // of them was HOME - and on a launcher that is not a way out, it is the
+                    // screen you were already on. The band is an edge feature; these are places.
+                    if (edgesAreSystems) return@buildList
                     if (settings.edgeSide != EdgeSide.RIGHT) {
                         add(Rect(insetLeftPx + edgeGapPx, exTop, insetLeftPx + widthPx, exBottom))
                     }
