@@ -212,6 +212,40 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 
 ## Still outstanding
 
+### Niagara parity — status, checked 2026-10-17
+
+| Feature | Status |
+|---|---|
+| **Hidden apps in search** | **ALREADY DONE.** `appListSearchHidden` in `Prefs.kt` defaults to **`false`**, so hidden apps are excluded from search by default and there is a setting to opt in (`settings_search_hidden`, App list section). **Not a Niagara gap for us — do not "implement" it.** |
+| Usage Breaker (nudge at 5/10/20…240 min) | not started |
+| Contact search with direct call/SMS | not started |
+| Notification Summary / batching | not started |
+
+### The -1 page is still called "very very buggy" by the user
+
+I have fixed six separate faults on it blind (stale `AndroidView`, one-way drag, writes to a
+stale snapshot, gesture read from the wrong callback, one MOVE only, overlap on drop) and each
+time they found something new. **Do not keep guessing.** Ask which gesture they just performed
+and what they expected, one at a time, and reproduce that exact case before changing anything.
+
+## Gesture exclusion — the back-swipe bug
+
+`HomeRoute` spends Android's 200dp-per-side back-gesture exclusion budget on the **A-Z scrub
+band**. That is right on the home screen and wrong on a full-screen place: while the
+notification panel or the left page is up, **both edges belong to the system and nothing is
+excluded**. See `edgesAreSystems` near the `setSystemGestureExclusionRects` call.
+
+Symptom when it was wrong: BACK worked, the *back gesture* did not, and the only way out of
+either place was HOME — which on a launcher is the screen you were already on, so it read as a
+gesture that changed nothing. **A gesture that "doesn't work" on a launcher is very often a
+gesture the launcher is eating; check exclusion rects before suspecting the handler.**
+
+Also: BACK is a *key*, the back *gesture* is an edge swipe. `adb input keyevent KEYCODE_BACK`
+proving BACK works proves nothing about the gesture — test with
+`adb shell input swipe 2 1200 950 1200 250`.
+
+## Still outstanding
+
 - **Niagara parity work**, in the order suggested to the user:
   1. Notification Summary / batching (~6h digests) — the biggest gap, and every piece is
      already present because we own the notification surface.
