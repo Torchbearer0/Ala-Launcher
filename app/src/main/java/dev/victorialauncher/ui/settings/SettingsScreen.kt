@@ -2,6 +2,17 @@
 package dev.victorialauncher.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Gesture
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -936,6 +947,13 @@ fun SettingsScreen(
         matching.groupBy { it.section }.toList()
     }
 
+    // True black rather than the wallpaper. Every pixel an OLED is not lit is power the screen
+    // does not use, and on a panel this dark a settings screen is at its most legible - which is
+    // the whole argument for AMOLED, and it cannot be had behind a photograph. The wallpaper
+    // comes back only while the dim setting is being previewed, because that is the one moment
+    // its absence would be describing the thing being changed rather than the screen.
+    val pageBackground = lerp(Color.Black, surface, dimPreviewReveal)
+
     Box(Modifier.fillMaxSize()) {
     if (dimPreviewReveal > 0f) {
         Box(
@@ -945,7 +963,7 @@ fun SettingsScreen(
         )
     }
     Scaffold(
-        containerColor = surface.copy(alpha = 1f - dimPreviewReveal),
+        containerColor = pageBackground,
         topBar = {
             TopAppBar(
                 title = {
@@ -957,7 +975,7 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = surface.copy(alpha = 1f - dimPreviewReveal),
+                    containerColor = pageBackground,
                 ),
             )
         },
@@ -967,7 +985,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier
                 .padding(padding)
-                .background(surface)
+                .background(pageBackground)
                 .fillMaxWidth(),
         ) {
             item {
@@ -993,29 +1011,42 @@ fun SettingsScreen(
             }
 
             if (openSection == null && query.isBlank()) {
-                items(SettingsSection.entries) { section ->
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { openSection = section }
-                                .padding(horizontal = 16.dp, vertical = 18.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(section.labelRes),
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                contentDescription = null,
-                                modifier = Modifier.padding(4.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                item {
+                    SettingsSurface {
+                        SettingsSection.entries.forEachIndexed { index, section ->
+                            if (index > 0) RowDivider()
+                            // A mark at the left of each one. A list of eight words and a
+                            // chevron is a directory with nothing to look at; the mark is what
+                            // makes each line findable before it has been read.
+                            SettingsRow(
+                                title = stringResource(section.labelRes),
+                                onClick = { openSection = section },
+                                leading = {
+                                    Box(
+                                        Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(11.dp))
+                                            .background(
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            section.icon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(19.dp),
+                                        )
+                                    }
+                                },
+                                trailing = {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                    )
+                                },
                             )
                         }
                     }
@@ -1168,7 +1199,10 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun RowDivider() {
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), modifier = Modifier.padding(start = 22.dp, end = 22.dp))
+    HorizontalDivider(
+        color = SettingsTone.hairline,
+        modifier = Modifier.padding(start = 22.dp, end = 22.dp),
+    )
 }
 
 @Composable
@@ -1509,15 +1543,15 @@ private fun MinusOneMode.labelRes(): Int = when (this) {
     MinusOneMode.WIDGETS -> R.string.minus_one_mode_widgets
 }
 
-private enum class SettingsSection(@StringRes val labelRes: Int) {
-    APPEARANCE(R.string.settings_section_appearance),
-    HOME(R.string.settings_section_home),
-    APP_LIST(R.string.settings_section_app_list),
-    GESTURES(R.string.settings_section_gestures),
-    NOTIFICATIONS(R.string.settings_section_notifications),
-    APPS(R.string.settings_section_apps),
-    BACKUP(R.string.settings_section_backup),
-    ABOUT(R.string.settings_section_about),
+private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
+    APPEARANCE(R.string.settings_section_appearance, Icons.Filled.Palette),
+    HOME(R.string.settings_section_home, Icons.Filled.Home),
+    APP_LIST(R.string.settings_section_app_list, Icons.Filled.Apps),
+    GESTURES(R.string.settings_section_gestures, Icons.Filled.Gesture),
+    NOTIFICATIONS(R.string.settings_section_notifications, Icons.Filled.NotificationsNone),
+    APPS(R.string.settings_section_apps, Icons.Filled.GridView),
+    BACKUP(R.string.settings_section_backup, Icons.Filled.CloudSync),
+    ABOUT(R.string.settings_section_about, Icons.Filled.Info),
 }
 
 /**

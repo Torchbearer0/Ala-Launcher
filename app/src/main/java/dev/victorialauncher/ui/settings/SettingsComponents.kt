@@ -44,14 +44,35 @@ import dev.victorialauncher.data.IconShape
  * between sections.
  */
 
+/**
+ * The three values the settings screen is drawn from, in one place because they are one idea.
+ *
+ * On a true-black page a card cannot separate itself by being lighter — there is nothing above
+ * black to be lighter *than*. So the card sits a few steps off black and is separated by a
+ * hairline rather than by a difference in fill, which is the whole trick: on OLED an unlit
+ * border costs nothing, and a grey card costs every pixel it covers.
+ */
+internal object SettingsTone {
+    /** The page. True black: an OLED pixel off is a pixel not drawing power. */
+    val page = Color.Black
+
+    /** The card. Barely off black, so it is a surface and not a hole. */
+    val card = Color(0xFF0B0B0E)
+
+    /** Row dividers inside a card, quieter than the card's own edge. */
+    val hairline = Color(0x14FFFFFF)
+
+    /** The edge of a card, the only thing that draws it on black. */
+    val edge = Color(0x1FFFFFFF)
+}
+
 /** One section's card. */
 @Composable
 internal fun SettingsSurface(content: @Composable ColumnScope.() -> Unit) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
-        // Tonal rather than the old flat translucent fill: it picks up the theme's own surface
-        // colour, so the card sits on the wallpaper without a hard edge against it.
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        shape = RoundedCornerShape(20.dp),
+        color = SettingsTone.card,
+        border = androidx.compose.foundation.BorderStroke(1.dp, SettingsTone.edge),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(content = content)
@@ -84,6 +105,7 @@ internal fun SettingsRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
+    leading: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
@@ -93,6 +115,10 @@ internal fun SettingsRow(
             .padding(start = 22.dp, end = 18.dp, top = 13.dp, bottom = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(14.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             if (subtitle != null) {
