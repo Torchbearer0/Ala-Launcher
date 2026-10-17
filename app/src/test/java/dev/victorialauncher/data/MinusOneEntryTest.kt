@@ -78,6 +78,50 @@ class MinusOneEntryTest {
     }
 
     @Test
+    fun widthIsClampedButZeroStillMeansFullWidth() {
+        val widget = MinusOneEntry.Widget(widgetId = 3, heightDp = 180)
+        // 0 is the fill case, so a negative width clamps to 0 rather than to a 1dp sliver.
+        assertEquals(0, widget.withWidth(-40).widthDp)
+        assertEquals(MINUS_ONE_MAX_WIDTH_DP, widget.withWidth(99_999).widthDp)
+        assertEquals(180, widget.withWidth(180).widthDp)
+    }
+
+    @Test
+    fun resizingBothAxesAtOnceLeavesTheOtherAlone() {
+        val widget = MinusOneEntry.Widget(widgetId = 3, heightDp = 180, widthDp = 200)
+        val resized = widget.withSize(widthDp = 300, heightDp = 400) as MinusOneEntry.Widget
+        assertEquals(300, resized.widthDp)
+        assertEquals(400, resized.heightDp)
+        assertEquals(3, resized.widgetId)
+    }
+
+    @Test
+    fun aStoredEntryWithNoWidthComesBackFullWidth() {
+        // Written before entries were resizable sideways. It has no width at all, and the only
+        // correct reading of that is "as wide as the page", not "as wide as it can be".
+        val entry = minusOneEntriesFromJson("""[{"kind":"widget","id":7,"h":180}]""").single()
+        assertEquals(0, entry.widthDp)
+    }
+
+    @Test
+    fun sideBySideEntriesSurviveARoundTrip() {
+        val entries = listOf(
+            MinusOneEntry.Widget(1, heightDp = 180, widthDp = 180),
+            MinusOneEntry.Widget(2, heightDp = 180, widthDp = 180),
+            MinusOneEntry.Widget(3, heightDp = 300),
+        )
+        assertEquals(entries, minusOneEntriesFromJson(minusOneEntriesToJson(entries)))
+    }
+
+    @Test
+    fun aFullWidthEntryIsNotWrittenOut() {
+        // 0 is the default, so storing it would mean every future read has to know that zero
+        // means "fill" rather than "nothing".
+        val json = minusOneEntriesToJson(listOf(MinusOneEntry.Widget(1, heightDp = 180)))
+        assertTrue(!json.contains("\"w\""))
+    }
+
+    @Test
     fun aWidgetWhoseIdIsGoneIsPrunedWithoutDisturbingTheRest() {
         val page = MinusOnePage(
             mode = MinusOneMode.WIDGETS,

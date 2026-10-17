@@ -31,11 +31,30 @@ enum class MinusOneMode {
 sealed interface MinusOneEntry {
     val heightDp: Int
 
+    /**
+     * How wide this entry is, or 0 to mean "whatever is left of the row".
+     *
+     * A dp figure rather than a fraction because a widget sizes itself against the width it is
+     * told in dp and the two have to agree; a fraction would have to be converted back at every
+     * layout, and a widget laid out for one width and measured at another clips its text. 0 is
+     * the fill case and is what an entry written before width was resizable gets, so nothing
+     * existing changes shape on upgrade.
+     */
+    val widthDp: Int
+
     /** An app widget, held by id in the same host the home screen's widget uses. */
-    data class Widget(val widgetId: Int, override val heightDp: Int) : MinusOneEntry
+    data class Widget(
+        val widgetId: Int,
+        override val heightDp: Int,
+        override val widthDp: Int = 0,
+    ) : MinusOneEntry
 
     /** A launch shortcut for an app, by the same key the app list and favorites use. */
-    data class Shortcut(val appKey: String, override val heightDp: Int) : MinusOneEntry
+    data class Shortcut(
+        val appKey: String,
+        override val heightDp: Int,
+        override val widthDp: Int = 0,
+    ) : MinusOneEntry
 }
 
 /**
@@ -60,6 +79,9 @@ const val MINUS_ONE_MIN_HEIGHT_DP = 56
 /** Past this a single entry stops being a page and starts being the whole screen. */
 const val MINUS_ONE_MAX_HEIGHT_DP = 640
 
+/** Wide enough to be the whole page on any phone; past it there is nothing beside it to fit. */
+const val MINUS_ONE_MAX_WIDTH_DP = 900
+
 /**
  * What a freshly added widget gets.
  *
@@ -73,12 +95,26 @@ fun MinusOneEntry.withHeight(dp: Int): MinusOneEntry = when (this) {
     is MinusOneEntry.Shortcut -> copy(heightDp = dp.coerceIn(MINUS_ONE_MIN_HEIGHT_DP, MINUS_ONE_MAX_HEIGHT_DP))
 }
 
+/**
+ * A width of 0 fills the row, so a floor below it would make "fill" unreachable and leave the
+ * entry with a width of 1dp.
+ */
+fun MinusOneEntry.withWidth(dp: Int): MinusOneEntry = when (this) {
+    is MinusOneEntry.Widget -> copy(widthDp = dp.coerceIn(0, MINUS_ONE_MAX_WIDTH_DP))
+    is MinusOneEntry.Shortcut -> copy(widthDp = dp.coerceIn(0, MINUS_ONE_MAX_WIDTH_DP))
+}
+
+fun MinusOneEntry.withSize(widthDp: Int, heightDp: Int): MinusOneEntry = withWidth(widthDp).withHeight(heightDp)
+
 internal fun minusOneEntriesToJson(entries: List<MinusOneEntry>): String {
     val array = JSONArray()
     entries.forEach { entry ->
         array.put(
             JSONObject().apply {
                 put("h", entry.heightDp)
+                // Only written when it is a real width: a full-width entry is the default, and
+                // storing a zero would mean every future read has to know that means "fill".
+                if (entry.widthDp > 0) put("w", entry.widthDp)
                 when (entry) {
                     is MinusOneEntry.Widget -> {
                         put("kind", "widget")
@@ -102,13 +138,16 @@ internal fun minusOneEntriesFromJson(json: String?): List<MinusOneEntry> {
         (0 until array.length()).mapNotNull { i ->
             val obj = array.optJSONObject(i) ?: return@mapNotNull null
             val height = obj.optInt("h", 180).coerceIn(MINUS_ONE_MIN_HEIGHT_DP, MINUS_ONE_MAX_HEIGHT_DP)
+            // Absent means full width, which is what every entry stored before this was
+            // resizable sideways should keep rather than come back a column narrow.
+            val width = obj.optInt("w", 0).coerceIn(0, MINUS_ONE_MAX_WIDTH_DP)
             when (obj.optString("kind")) {
-                "widget" -> MinusOneEntry.Widget(widgetId = obj.optInt("id", -1), heightDp = height)
+                "widget" -> MinusOneEntry.Widget(widgetId = obj.optInt("id", -1), heightDp = height, widthDp = width)
                     // A widget with no id cannot be bound, so it is dropped rather than drawn as
                     // an empty box that never fills in.
                     .takeIf { it.widgetId > 0 }
                 "app" -> obj.optString("key").takeIf { it.isNotBlank() }
-                    ?.let { MinusOneEntry.Shortcut(appKey = it, heightDp = height) }
+                    ?.let { MinusOneEntry.Shortcut(appKey = it, heightDp = height, widthDp = width) }
                 else -> null
             }
         }
