@@ -25,6 +25,21 @@ data class ClockWidgetConfig(
     val weatherFahrenheit: Boolean,
     /** Package the weather row opens, or null for a row that is not a tap target. */
     val weatherPackage: String?,
+    /**
+     * Whether the coming days are drawn under the current weather.
+     *
+     * Off by default, and deliberately not tied to [showWeather]: a widget that already
+     * shows one temperature should not grow a second row because this shipped later.
+     */
+    val showWeatherForecast: Boolean,
+    /**
+     * A name for the place this row is about, drawn beside the weather.
+     *
+     * Purely a label. Victoria cannot fetch weather for a chosen place, so this says which
+     * place the numbers are meant to be rather than choosing one - the app sending the
+     * broadcast is the one actually pointed at a location.
+     */
+    val weatherLocation: String?,
     val showNotifications: Boolean,
     val notificationsSizeSp: Int,
     val showAgenda: Boolean,
@@ -133,6 +148,9 @@ data class ClockWidgetConfig(
                 // who sent it. A list of package names we happened to think of would be wrong
                 // for whoever is not on it.
                 weatherPackage = prefs.getString(key("weatherPkg", widgetId), null),
+                showWeatherForecast = prefs.getBoolean(key("weatherForecast", widgetId), false),
+                weatherLocation = prefs.getString(key("weatherLocation", widgetId), null)
+                    ?.takeIf { it.isNotBlank() },
                 showNotifications = prefs.getBoolean(key("notifications", widgetId), false),
                 showAgenda = prefs.getBoolean(key("agenda", widgetId), false),
                 agendaSizeSp = prefs.getInt(key("agendaSize", widgetId), DEFAULT_ROW_SIZE_SP),
@@ -164,6 +182,8 @@ data class ClockWidgetConfig(
                 .putInt(key("weatherSize", widgetId), config.weatherSizeSp)
                 .putBoolean(key("weatherF", widgetId), config.weatherFahrenheit)
                 .putString(key("weatherPkg", widgetId), config.weatherPackage)
+                .putBoolean(key("weatherForecast", widgetId), config.showWeatherForecast)
+                .putString(key("weatherLocation", widgetId), config.weatherLocation)
                 .putBoolean(key("notifications", widgetId), config.showNotifications)
                 .putBoolean(key("agenda", widgetId), config.showAgenda)
                 .putInt(key("agendaSize", widgetId), config.agendaSizeSp)
@@ -200,6 +220,8 @@ data class ClockWidgetConfig(
                 .remove(key("weatherSize", widgetId))
                 .remove(key("weatherF", widgetId))
                 .remove(key("weatherPkg", widgetId))
+                .remove(key("weatherForecast", widgetId))
+                .remove(key("weatherLocation", widgetId))
                 .remove(key("weatherOpacity", widgetId))
                 .remove(key("notifications", widgetId))
                 .remove(key("notificationsSize", widgetId))

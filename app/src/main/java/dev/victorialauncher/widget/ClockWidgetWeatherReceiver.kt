@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+
 import org.json.JSONObject
 
 /**
@@ -36,7 +37,19 @@ class ClockWidgetWeatherReceiver : BroadcastReceiver() {
             obj.optInt("currentTemp", 0) to obj.optString("currentCondition", "")
         }.getOrNull() ?: return
 
-        if (!ClockWidgetWeather.store(context, parsed.first, parsed.second)) return
+        // The coming days ride along in the same payload, so they cost nothing extra to
+        // receive and no second permission to get. Parsed separately and allowed to fail on
+        // its own: a sender whose forecast is malformed should still get today's temperature
+        // drawn, not lose the whole broadcast.
+        val forecast = ClockWidgetWeather.parseForecast(
+            runCatching { JSONObject(json).optJSONArray("forecasts")?.toString() }.getOrNull(),
+        )
+
+        // The day's condition is drawn as the sender's own wording rather than looked up from its
+        // code: the code in that field is the sender's numbering, not the one the Gadgetbridge
+        // shape documents, so a table written against the wrong one gives five days of numbers
+        // and no sky — which reads as the feature working.
+        if (!ClockWidgetWeather.store(context, parsed.first, parsed.second, forecast)) return
 
         // The widgets are only ever drawn when something asks, and weather arriving is the
         // only thing that knows this one changed.

@@ -136,6 +136,8 @@ class ClockWidgetConfigActivity : ComponentActivity() {
                                 config,
                                 onShow = { config = config.copy(showWeather = it) },
                                 onFahrenheit = { config = config.copy(weatherFahrenheit = it) },
+                                onShowForecast = { config = config.copy(showWeatherForecast = it) },
+                                onLocation = { config = config.copy(weatherLocation = it) },
                                 onPickApp = { pickingWeatherApp = true },
                             )
                             NotificationsSection(config) {
@@ -496,8 +498,11 @@ private fun WeatherSection(
     config: ClockWidgetConfig,
     onShow: (Boolean) -> Unit,
     onFahrenheit: (Boolean) -> Unit,
+    onShowForecast: (Boolean) -> Unit,
+    onLocation: (String?) -> Unit,
     onPickApp: () -> Unit,
 ) {
+    var locationDraft by remember(config.weatherLocation) { mutableStateOf(config.weatherLocation.orEmpty()) }
     Column {
         Text(stringResource(R.string.widget_clock_weather), style = MaterialTheme.typography.bodyMedium)
         Chips {
@@ -519,6 +524,48 @@ private fun WeatherSection(
                     config.weatherFahrenheit,
                 ) { onFahrenheit(true) }
             }
+
+            // The coming days are their own switch rather than a consequence of the weather
+            // one: they cost a second row on a widget whose height is shared with everything
+            // else on it, and a row you did not ask for is a row pushing the agenda off.
+            Chips {
+                FilledChip(
+                    stringResource(R.string.widget_clock_weather_forecast_show),
+                    config.showWeatherForecast,
+                ) { onShowForecast(true) }
+                FilledChip(
+                    stringResource(R.string.widget_clock_weather_forecast_hide),
+                    !config.showWeatherForecast,
+                ) { onShowForecast(false) }
+            }
+
+            OutlinedTextField(
+                value = locationDraft,
+                onValueChange = { locationDraft = it },
+                label = { Text(stringResource(R.string.widget_clock_weather_location)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(
+                onClick = {
+                    val typed = locationDraft.trim()
+                    onLocation(typed.ifEmpty { null })
+                    locationDraft = typed
+                },
+            ) {
+                Text(
+                    if (locationDraft.isBlank()) {
+                        stringResource(R.string.widget_clock_weather_location_none)
+                    } else {
+                        stringResource(R.string.widget_clock_weather_location)
+                    },
+                )
+            }
+            Text(
+                stringResource(R.string.widget_clock_weather_location_hint),
+                style = MaterialTheme.typography.bodySmall,
+            )
+
             TextButton(onClick = onPickApp) {
                 Text(stringResource(R.string.widget_clock_weather_opens))
             }

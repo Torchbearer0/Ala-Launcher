@@ -23,6 +23,7 @@ object ClockWidgetWeather {
     private const val KEY_TEMP_K = "tempK"
     private const val KEY_CONDITION = "condition"
     private const val KEY_RECEIVED_AT = "receivedAt"
+    private const val KEY_FORECAST = "forecast"
 
     /**
      * Past this, say nothing rather than something old.
@@ -39,7 +40,39 @@ object ClockWidgetWeather {
     /** Enough for "Partly cloudy"; past this something is wrong with the sender, not the sky. */
     private const val MAX_CONDITION_CHARS = 40
 
-    data class Reading(val tempK: Int, val condition: String)
+    /**
+     * The names a sender has been seen to put the day's condition under.
+     *
+     * Tried in order and the first non-blank wins, so a payload carrying more than one of
+     * them reads as the more specific one rather than as whichever happened to be parsed
+     * first.
+     */
+    private val CONDITION_KEYS = listOf("dayCode", "conditionCode", "condition", "day_condition")
+
+    /**
+     * One coming day, as the sender described it.
+     *
+     * A day's own condition rather than today's, because the pair is what makes a forecast
+     * worth drawing: "tomorrow 4°, rain" says something a single temperature cannot.
+     */
+    data class ForecastDay(
+        val condition: String,
+        val minTempK: Int,
+        val maxTempK: Int,
+    )
+
+    /**
+     * A row per day is a row that costs height, and the widget's height is shared with every
+     * other line on it. Five is what fits without the forecast pushing the agenda off.
+     */
+    const val MAX_FORECAST_DAYS = 5
+
+    data class Reading(
+        val tempK: Int,
+        val condition: String,
+        /** Empty when the sender sent no forecast, which is a normal thing for it to do. */
+        val forecast: List<ForecastDay> = emptyList(),
+    )
 
     /** Null when nothing has arrived, or when what did is too old to repeat. */
     fun current(context: Context): Reading? {
@@ -48,23 +81,171 @@ object ClockWidgetWeather {
         if (tempK !in PLAUSIBLE_K) return null
         val receivedAt = prefs.getLong(KEY_RECEIVED_AT, 0L)
         if (receivedAt <= 0L || System.currentTimeMillis() - receivedAt > FRESH_FOR_MS) return null
-        return Reading(tempK, prefs.getString(KEY_CONDITION, null).orEmpty())
+        return Reading(
+            tempK,
+            prefs.getString(KEY_CONDITION, null).orEmpty(),
+            readForecast(prefs.getString(KEY_FORECAST, null)),
+        )
     }
 
     /** Returns false for anything that does not look like a temperature, having stored nothing. */
-    fun store(context: Context, tempK: Int, condition: String?): Boolean {
+    fun store(context: Context, tempK: Int, condition: String?, forecast: List<ForecastDay> = emptyList()): Boolean {
         if (tempK !in PLAUSIBLE_K) return false
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putInt(KEY_TEMP_K, tempK)
             .putString(KEY_CONDITION, condition?.take(MAX_CONDITION_CHARS)?.trim().orEmpty())
+            .putString(KEY_FORECAST, encodeForecast(forecast))
             .putLong(KEY_RECEIVED_AT, System.currentTimeMillis())
             .apply()
         return true
     }
 
+    /**
+     * The coming days out of a Gadgetbridge weather payload.
+     *
+     * Pure and free of any Android type, so the parsing is testable on its own and a sender
+     * that sends something strange is a test rather than a crash on someone's home screen.
+     *
+     * A day missing either temperature is dropped rather than drawn: "tomorrow, rain, and no
+     * number at all" is a row that says nothing, and a row of those is worse than no row.
+     */
+    fun parseForecast(json: String?): List<ForecastDay> {
+        if (json.isNullOrBlank()) return emptyList()
+        val days = runCatching {
+            val array = org.json.JSONArray(json)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val minK = item.optInt("minTemp", Int.MIN_VALUE)
+                    val maxK = item.optInt("maxTemp", Int.MIN_VALUE)
+                    if (minK !in PLAUSIBLE_K || maxK !in PLAUSIBLE_K) continue
+                    // The key for the day's condition is not the one every sender uses.
+                    // Gadgetbridge calls it `dayCode`; Breezy, which is the sender this is
+                    // mostly for, sends `conditionCode` and leaves `dayCode` absent - so
+                    // reading only the documented name silently produced a forecast of five
+                    // days with no sky on any of them. Asked of each name in turn, and the
+                    // first one that is actually there wins.
+                    val code = CONDITION_KEYS.firstNotNullOfOrNull { key ->
+                        item.optString(key, "").takeIf { it.isNotBlank() }
+                    }.orEmpty()
+                    // Senders have been seen with the pair the wrong way round; a row
+                    // reading "high 4°, low 19°" is a sender's bug made into a certainty.
+                    add(
+                        ForecastDay(
+                            condition = code,
+                            minTempK = minOf(minK, maxK),
+                            maxTempK = maxOf(minK, maxK),
+                        )
+                    )
+                    if (size == MAX_FORECAST_DAYS) return@buildList
+                }
+            }
+        }.getOrDefault(emptyList())
+        return days
+    }
+
+    /**
+     * Turns a Gadgetbridge day code into words, the way a person would say it.
+     *
+     * The forecast carries a numeric code where today's condition carries free text, so the
+     * day cannot go through the same substring matching: "2" is not a sky. Naming each one
+     * means the row can be drawn with the same rule as everything else on the widget - match
+     * the words, draw the glyph - instead of a second table of icons that would have to be
+     * kept alongside the first.
+     *
+     * Past the codes named here the answer is unknown, and unknown is drawn as no glyph
+     * rather than as a confident wrong sky, which is the same choice [glyphFor] makes.
+     */
+    fun conditionWordsForDayCode(code: String): String = when (code.trim()) {
+        "0" -> "Clear"
+        "1" -> "Mostly clear"
+        "2" -> "Partly cloudy"
+        "3" -> "Cloudy"
+        "4" -> "Rainy"
+        "5" -> "Heavy rain"
+        "6" -> "Light rain"
+        "7" -> "Light rain showers"
+        "8" -> "Heavy rain showers"
+        "9" -> "Light snow"
+        "10" -> "Heavy snow"
+        "11" -> "Light snow showers"
+        "12" -> "Heavy snow showers"
+        "13" -> "Light rain and snow"
+        "14" -> "Heavy rain and snow"
+        "15" -> "Light rain and snow showers"
+        "16" -> "Heavy rain and snow showers"
+        "17" -> "Light thunderstorm"
+        "18" -> "Heavy thunderstorm"
+        "19" -> "Light snow thunderstorm"
+        "20" -> "Heavy snow thunderstorm"
+        "21" -> "Light rain and snow thunderstorm"
+        "22" -> "Heavy rain and snow thunderstorm"
+        "23" -> "Light thunderstorm showers"
+        "24" -> "Heavy thunderstorm showers"
+        "25" -> "Light snow thunderstorm showers"
+        "26" -> "Heavy snow thunderstorm showers"
+        "27" -> "Light rain and snow thunderstorm showers"
+        "28" -> "Heavy rain and snow thunderstorm showers"
+        "29" -> "Breezy"
+        "30" -> "Windy"
+        "31" -> "Light rain and breezy"
+        "32" -> "Heavy rain and breezy"
+        "33" -> "Light snow and breezy"
+        "34" -> "Heavy snow and breezy"
+        "35" -> "Light rain and snow and breezy"
+        "36" -> "Heavy rain and snow and breezy"
+        "37" -> "Light thunderstorm and breezy"
+        "38" -> "Heavy thunderstorm and breezy"
+        "39" -> "Light snow thunderstorm and breezy"
+        "40" -> "Heavy snow thunderstorm and breezy"
+        "41" -> "Light rain and snow thunderstorm and breezy"
+        "42" -> "Heavy rain and snow thunderstorm and breezy"
+        "43" -> "Light thunderstorm showers and breezy"
+        "44" -> "Heavy thunderstorm showers and breezy"
+        "45" -> "Light snow thunderstorm showers and breezy"
+        "46" -> "Heavy snow thunderstorm showers and breezy"
+        "47" -> "Fog"
+        "48" -> "Light hail"
+        "49" -> "Light hail showers"
+        "50" -> "Heavy hail showers"
+        "51" -> "Light hail and rain"
+        "52" -> "Heavy hail and rain"
+        // Anything else is somebody's own code, or a version of this table from the future.
+        else -> ""
+    }
+
+    /** Flat text rather than JSON: this is read on a widget thread with no schema to keep. */
+    private fun encodeForecast(days: List<ForecastDay>): String =
+        days.take(MAX_FORECAST_DAYS).joinToString(";") { day ->
+            // The condition is words, so the separator cannot appear in it.
+            "${day.minTempK},${day.maxTempK},${day.condition.replace(';', ' ').replace(',', ' ')}"
+        }
+
+    private fun readForecast(stored: String?): List<ForecastDay> {
+        if (stored.isNullOrBlank()) return emptyList()
+        return stored.split(';').mapNotNull { row ->
+            val parts = row.split(',', limit = 3)
+            if (parts.size < 3) return@mapNotNull null
+            val minK = parts[0].trim().toIntOrNull() ?: return@mapNotNull null
+            val maxK = parts[1].trim().toIntOrNull() ?: return@mapNotNull null
+            if (minK !in PLAUSIBLE_K || maxK !in PLAUSIBLE_K) return@mapNotNull null
+            ForecastDay(parts[2].trim(), minOf(minK, maxK), maxOf(minK, maxK))
+        }.take(MAX_FORECAST_DAYS)
+    }
+
     /** The reading on its own, for the row: just how warm it is. */
-    fun degrees(reading: Reading, fahrenheit: Boolean): String {
-        val celsius = reading.tempK - 273.15
+    fun degrees(reading: Reading, fahrenheit: Boolean): String =
+        degreesFromKelvin(reading.tempK, fahrenheit)
+
+    /**
+     * One temperature in the unit that was asked for.
+     *
+     * Shared by today's reading and each forecast day so the two rows cannot disagree about
+     * what a degree looks like - a widget reading "21°" and "66°" on the same line is a
+     * widget nobody trusts.
+     */
+    fun degreesFromKelvin(kelvin: Int, fahrenheit: Boolean): String {
+        val celsius = kelvin - 273.15
         val value = if (fahrenheit) celsius * 9 / 5 + 32 else celsius
         val unit = if (fahrenheit) "F" else "C"
         return String.format(Locale.getDefault(), "%.0f°%s", value, unit)
@@ -109,7 +290,10 @@ object ClockWidgetWeather {
         return when {
             contains(text, "thunder", "lightning", "storm", "thundershower") ->
                 WeatherGlyph.THUNDERSTORM
-            contains(text, "snow", "sleet", "blizzard", "hail", "freezing") ->
+            // Hail before the words it hides behind: "light hail and rain" is hail, and
+            // asking the rain question first would draw a raindrop for a hailstorm.
+            contains(text, "hail") -> WeatherGlyph.HAIL
+            contains(text, "snow", "sleet", "blizzard", "freezing") ->
                 WeatherGlyph.SNOW
             contains(text, "drizzle") -> WeatherGlyph.DRIZZLE
             contains(text, "rain", "shower") -> WeatherGlyph.RAIN
@@ -118,6 +302,9 @@ object ClockWidgetWeather {
                      "scattered", "broken", "intervals") -> WeatherGlyph.PARTLY_CLOUDY
             contains(text, "cloud", "overcast") -> WeatherGlyph.CLOUDY
             contains(text, "clear", "sunny", "fair", "blue sky") -> WeatherGlyph.CLEAR
+            // Wind last, because it is nearly always a modifier on something else - "breezy",
+            // "and breezy", "windy" - and the sky it modifies is the more useful half.
+            contains(text, "wind", "breezy", "blow", "gust") -> WeatherGlyph.WIND
             else -> WeatherGlyph.UNKNOWN
         }
     }
@@ -134,7 +321,9 @@ object ClockWidgetWeather {
         DRIZZLE,
         RAIN,
         SNOW,
+        HAIL,
         THUNDERSTORM,
+        WIND,
         UNKNOWN,
     }
 
