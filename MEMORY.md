@@ -70,6 +70,16 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
     `.semantics { contentDescription = ... }`.
 11. **No `INTERNET` permission, ever.** Deliberate. This is why the Discover page hands off to
    the Google app instead of embedding a feed — a WebView would need the permission.
+12. **Never change a background colour without changing the content colour with it.** Making the
+   settings page true black while leaving the content on the system scheme gave a light-mode
+   device near-black text on a black page. Measure it, don't eyeball it — see below.
+13. **`AndroidView` builds its view once, in the factory, and never again.** Wrap it in
+   `key(widgetId)` or a list that reorders will keep every slot drawing its old content. This
+   is why the cross used to remove a widget that wasn't the one under the finger.
+14. **To check colours on device without being able to see the screen:** `adb shell screencap -p`,
+   `adb pull`, then `System.Drawing.Bitmap` + `GetPixel` in PowerShell. Sample the bounds of a
+   text node from a `uiautomator` dump and report min/max luminance — that gives a real
+   contrast ratio instead of an opinion. (Never `adb ... > file` for binary; `pull` is fine.)
 
 ## Current state of the -1 page (the page to the left of home)
 
@@ -86,9 +96,14 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
   A launcher cannot blur the wallpaper (it is the window background, not an app-owned view), so
   the scrim is what carries the separation.
 - **Long press an entry to arrange it.** Then:
-  - handles appear only on that entry (bottom = height, right = width, corner = both),
+  - handles appear only on that entry (bottom = height, right = width, corner = both) and are
+    **drawn while it is arranged**, not only while touched; the corner is an L-bracket,
+  - the **size in dp is shown** at the top of the entry while it is arranged, so it can be
+    aimed at a number rather than nudged,
   - a drag on its middle moves it past a neighbour, one step per 40dp of travel,
-  - a **cross** in the corner removes it, a **dot** beside it opens widget settings / app info,
+  - a **cross** in the corner removes it; the **dot** beside it appears **only if the widget's
+    provider declares a configure activity** (`AppWidgetProviderInfo.configure != null`) — on
+    this device none of the four widgets do, so there is no dot at all,
   - the long press no longer opens a menu; the dp **slider dialog is deleted**, not just hidden.
 - Entries pack side by side in a `FlowRow`. While something is edited, a leftover gap of 96dp or
   more shows a **plus** that opens the widget picker *there*. The plus is a **sibling** of the
@@ -100,12 +115,17 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
 
 - Page background is **true black** (`lerp(Color.Black, surface, dimPreviewReveal)`) — the
   wallpaper returns only while the dim setting is being previewed.
+- The whole `settings` nav route is wrapped in `MaterialTheme(colorScheme = amoledColorScheme())`
+  (`ui/theme/Theme.kt`). **Scoped to the route, not inside `SettingsScreen`**, because the screen
+  is a ~180-parameter entry point and re-indenting its body to wrap it in a theme is exactly the
+  kind of edit that corrupts the file. `VictoriaNavHost.kt` `composable("settings")`.
 - Cards are `SettingsTone.card` = `#0B0B0E` with a 1dp `SettingsTone.edge` hairline. A card on
   black cannot separate itself by being lighter; the border is what draws it.
 - The three tone values live together in `SettingsTone` in `SettingsComponents.kt` on purpose —
   they are one idea and drift apart if they are written at each use.
 - The sections list is **one card containing 8 rows**, each with a coloured mark at its left.
   `SettingsRow` grew a `leading` slot for it.
+- Measured: page `0,0,0`, card `0B0B0E`, section label luminance 11→231 ≈ **16:1 contrast**.
 
 ## Still outstanding
 
