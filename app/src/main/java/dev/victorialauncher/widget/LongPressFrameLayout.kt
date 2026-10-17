@@ -71,46 +71,28 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
     )
 
     /**
-     * Reads the arranging drag here, not in [onInterceptTouchEvent].
+     * Everything about the long press and the drag is read here, not in
+     * [onInterceptTouchEvent].
      *
      * A ViewGroup only consults onInterceptTouchEvent for the press and while it has no touch
-     * target; once the widget inside has taken the gesture, the moves go straight to it. So a
-     * drag read from there never ran at all - the press landed, the long press fired, and the
-     * widget could be dragged by nobody. dispatchTouchEvent is called for every event that
-     * reaches this view whichever child ends up handling it, so this is the only place a drag
-     * can be seen whole.
+     * target - once the widget inside has taken the gesture the moves go straight to it. Two
+     * things followed from that, and both were felt:
+     *
+     * A drag read there never ran at all, because the press landed, the long press fired, and
+     * every move had already gone to the widget.
+     *
+     * Worse, the flag saying the long press had fired was only ever cleared in onTouchEvent -
+     * which never runs, for the same reason: without an intercept there is nothing for this
+     * view to receive the UP. So the flag stayed true, the next press returned true from
+     * onInterceptTouchEvent and was swallowed whole, and the widget's own buttons went dead
+     * until the next gesture happened to clear it. That is what a long press that is
+     * "sometimes dropped" looks like from the outside.
+     *
+     * dispatchTouchEvent is called for every event that reaches this view whichever child ends
+     * up handling it, so the whole gesture can be read from one place - and clearing the flag
+     * here is what makes it reliable rather than incidental.
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (dragMove != null) {
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    moving = false
-                    downX = ev.x
-                    downY = ev.y
-                    // Hold the gesture off the ancestors from the press, not from the slop.
-                    // The page is a scrolling column, and a drag that is still inside its own
-                    // touch slop has not yet told handleDrag it is a drag - so waiting for that
-                    // meant the column saw the slop cross first, took the gesture, and the
-                    // widget got exactly one move before it was being carried off-screen.
-                    // While the page is arranging this entry it is not scrolling.
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                }
-
-                MotionEvent.ACTION_MOVE -> handleDrag(ev)
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                    if (moving) {
-                        moving = false
-                        dragEnd?.invoke()
-                    }
-                }
-            }
-        }
-        return super.dispatchTouchEvent(ev)
-    }
-
-    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
@@ -119,51 +101,75 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
                 downX = ev.x
                 downY = ev.y
                 canScroll = hasScrollableContent()
+                // Hold the gesture off the ancestors from the press while the page is arranging
+                // this entry. The page is a scrolling column, and a drag still inside its own
+                // touch slop has not yet told handleDrag it is a drag - so waiting for that meant
+                // the column saw the slop cross first, took the gesture, and the widget got
+                // exactly one move before it was being carried off-screen.
+                if (dragMove != null) parent?.requestDisallowInterceptTouchEvent(true)
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (!claimed && canScroll) {
-                val dx = abs(ev.x - downX)
-                val dy = abs(ev.y - downY)
-                // Claimed early, and only for up and down.
-                //
-                // Claiming on the press instead took sideways with it, and handing it back
-                // once the drag turned out to be sideways does not give the pager its chance
-                // again — so a widget that scrolls could never be swiped past. Waiting for a
-                // full touch slop was the other way round: the home screen decides at exactly
-                // that distance, and whichever ran first won, which is how a list inside a
-                // widget lost its scroll to the notification shade.
-                //
-                // Half a slop is far enough to tell a direction and short enough to answer
-                // before the home screen does. Sideways is never claimed, so the pager keeps
-                // it, and a widget with nothing to scroll is never claimed for either.
-                //
-                // Nothing is written off, though. This used to settle on the first sample to
-                // pass that distance and stand by it for the rest of the gesture, including
-                // when it settled on sideways — and twelve pixels in, a thumb that has just
-                // come back down to carry on scrolling is mostly noise. A swipe that started a
-                // little across and then went down had already given the drag away, which is
-                // what made it "hit or miss whether it's recognized on the widget or the app
-                // scroller". Only the claim is final now; until one is made every move is
-                // another chance to read the direction.
-                //
-                // And read with a margin rather than by a hair, or the same wobble in the
-                // other direction claims a sideways swipe for a scroll before the pager can
-                // have it — which is the stack needing "the perfect angle".
-                if (dy > decisionSlop && dy > dx * DIRECTION_MARGIN) {
-                    claimed = true
-                    parent?.requestDisallowInterceptTouchEvent(true)
+                if (dragMove != null) handleDrag(ev)
+                if (!longPressFired && !claimed && canScroll) claimForScroll(ev)
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (moving) {
+                    moving = false
+                    dragEnd?.invoke()
                 }
-                }
+                // Unconditional. Whatever happened, this gesture is over, and anything that
+                // describes it has to be cleared here or it describes the next one as well.
+                longPressFired = false
+                claimed = false
+                moving = false
+                parent?.requestDisallowInterceptTouchEvent(false)
             }
         }
+
         gestureDetector.onTouchEvent(ev)
-        if (longPressFired) {
-            // Our own menu is taking over, so the hold on the parent is no longer wanted.
-            parent?.requestDisallowInterceptTouchEvent(false)
-        }
-        return longPressFired || moving
+
+        // Once the long press has fired or a drag has begun, the rest of the gesture is ours.
+        // Consuming it here is what stops the widget underneath also acting on the press - the
+        // UP never reaches it, so the long press is an edit and not also a tap.
+        if (longPressFired || moving) return true
+
+        return super.dispatchTouchEvent(ev)
     }
+
+    /**
+     * Claims a mostly-vertical drag for the widget's own scroll, once and early.
+     *
+     * Claimed at half a slop, because the home screen decides at exactly a slop and whichever
+     * ran first won. Sideways is never claimed, so a swipe past the widget still belongs to
+     * whatever is behind. Nothing is written off: until a claim is made every move is another
+     * chance to read the direction, which is what stopped a drag that started a little across
+     * and then went down being given away.
+     */
+    private fun claimForScroll(ev: MotionEvent) {
+        val dx = abs(ev.x - downX)
+        val dy = abs(ev.y - downY)
+        if (dy > decisionSlop && dy > dx * DIRECTION_MARGIN) {
+            claimed = true
+            parent?.requestDisallowInterceptTouchEvent(true)
+        }
+    }
+
+    /**
+     * Only ever true for the press itself.
+     *
+     * Everything else - the long press, the scroll claim, the arranging drag - is read in
+     * [dispatchTouchEvent], which sees the whole gesture. All that has to happen here is the
+     * one thing that cannot be done from there: taking the stream *away* from the widget, and
+     * only possible on a gesture this view was handed from the start.
+     *
+     * The gesture detector is deliberately NOT fed from here. dispatchTouchEvent feeds it
+     * before dispatching, so an event that reaches both callbacks arrives twice - and a second
+     * press on the detector starts a second gesture, which restarts the long-press timer and
+     * means the press never matures.
+     */
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = longPressFired || moving
 
     /**
      * Whether anything inside the widget can actually be scrolled right now.
@@ -186,16 +192,14 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
         return false
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            longPressFired = false
-            claimed = false
-            moving = false
-            parent?.requestDisallowInterceptTouchEvent(false)
-        }
-        return true
-    }
+    /**
+     * Nothing to do but claim the stream.
+     *
+     * No gesture detector here either, for the same reason as in [onInterceptTouchEvent] -
+     * dispatchTouchEvent has already seen the event, and a detector fed twice never matures a
+     * long press.
+     */
+    override fun onTouchEvent(event: MotionEvent): Boolean = true
 
     /**
      * Reports an arranging drag, in whichever pass this event was delivered. True once the drag

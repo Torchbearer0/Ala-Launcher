@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Height
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -649,6 +650,15 @@ private fun WidgetStackPage(
                         }
                     }
 
+                    // The move grip, in the middle, and visibly so. The whole widget used to be
+                    // the move area, which meant a drag that was meant for the widget's own
+                    // content moved the widget instead - and there was nothing on screen saying
+                    // the middle was the handle. A bar with an arrow along it says it.
+                    MoveGrip(
+                        contentColor = contentColor,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+
                     ResizeHandles(
                         contentColor = contentColor,
                         onDragWidth = { deltaDp ->
@@ -1040,6 +1050,35 @@ private fun ResizeHandles(
 }
 
 private enum class Handle { WIDTH, HEIGHT, CORNER }
+
+/**
+ * The grip that carries an entry, drawn in its middle.
+ *
+ * Shown only while the entry is being arranged, for the same reason the handles are: a page
+ * carrying permanent furniture over every widget is an editing surface, not a page of widgets.
+ *
+ * It sits above the widget rather than taking a strip of it, so the widget underneath keeps its
+ * whole area for its own content and a press that misses the grip is still the widget's. The
+ * circle is what gives it away on a busy widget - the arrow alone disappears into a wallpaper.
+ */
+@Composable
+private fun MoveGrip(contentColor: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(GRIP_SIZE_DP.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.34f))
+            .border(1.dp, contentColor.copy(alpha = 0.5f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Filled.DragIndicator,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(GRIP_ICON_DP.dp),
+        )
+    }
+}
 
 @Composable
 private fun HandleStrip(
