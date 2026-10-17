@@ -120,60 +120,21 @@ Last updated: after commit `f1e059a` (page edit mode + AMOLED settings).
    A Compose `Switch` is not an `android.widget.Switch` node. To check one exists and is
    coloured, screencap and count accent pixels — the pixel-sampling recipe above.
 
-## Current state of the -1 page (the page to the left of home)
+## The page to the left of home - REMOVED
 
-- Access: **swipe right through the empty band between the widget and the first row.** The band
-  is measured from where the widget ends and the first row starts, so it follows the padding.
-- It is an **overlay**, not a pager page. A pager was tried (commits `fe27bb8`..`c842812`) and
-  **reverted** because it broke two gestures the user needs and glitched the home screen.
-  Do not re-introduce a pager here without asking.
-- **Never** take the sideways swipe from a favourite row (that is the app panel) or from below
-  the favourites (that is the quick-launch slot). These three share one axis; the gap band is
-  the only place the page may have it.
-- Discover mode opens the **Google app automatically** on the swipe; no prompt/button.
-- The page has **its own gradient surface** and the home screen **blurs while it is showing**.
-  A launcher cannot blur the wallpaper (it is the window background, not an app-owned view), so
-  the scrim is what carries the separation.
-- **`editingIndex` is held by `HomeRoute` (`minusOneEditing`), not by `MinusOnePage`.** BACK is
-  aimed at it with a second `BackHandler` registered *after* the page's, so one press ends the
-  arranging and stays on the page. HOME is handled in `LaunchedEffect(homeIntentTick)`, which
-  closes the page. **Keep the editing state out of the page or BACK reverts to taking both out
-  at once**, which on a launcher looks identical to BACK doing nothing.
-- **Long press an entry to arrange it.** Then:
-  - handles appear only on that entry (bottom = height, right = width, corner = both) and are
-    **drawn while it is arranged**, not only while touched — each is a circle with an **arrow**
-    along the axis it resizes (across / up / double-headed laid on the diagonal),
-  - the **size in dp is shown** at the top of the entry while it is arranged, so it can be
-    aimed at a number rather than nudged,
-  - a drag on its middle **lifts it out** and carries it under the finger. The finger can go
-    anywhere on the page in **either** direction — the whole point of the lift, since a drag
-    reported as a position inside the widget can never go above its own top edge, which is why
-    down worked and up never could. `dragMove` gives the finger's window Y; the entry's
-    `graphicsLayer` translates it so the grab point stays under the finger.
-    The target index is the pure function `dragTargetIndex(heldIndex, centreY, rootY, lastIndex)`
-    — **10 tests in `DragTargetIndexTest`**. Do not go back to a fixed step; that reads as a shuffle.
-  - **free placement**: entries carry `xDp`/`yDp`; `isPlaced` is true once either is non-zero.
-    Placed entries are drawn by an overlay **outside the scrolling Column** (a position is a
-    place on the page, not in a list) and skipped by the FlowRow. Only written once placed, so
-    nothing moves at upgrade. `withPosition` clamps against the page size passed by the caller.
-    **Known gap: none outstanding.** A drop is resolved by `resolveDropY(desiredY, heightDp,
-    occupied, pageHeightDp, gapDp)` — **10 tests in `ResolveDropYTest`**. A position is a
-    *wish*: the wish, then the gap **below** each entry in the way, then the gap above.
-    **Downwards is preferred over nearest** — nearest will send a widget the length of the page
-    against the direction the finger was travelling. If the page is packed solid the answer is
-    the wish clamped, because something must give and hiding a widget is worse than overlapping.
-    `occupiedBands()` reads where each entry was *actually laid out*, not the list — the list
-    knows neither entry heights nor where the placed ones ended up.
-  - a **cross** in the corner removes it; the **dot** beside it appears **only if the widget's
-    provider declares a configure activity** (`AppWidgetProviderInfo.configure != null`) — on
-    this device none of the four widgets do, so there is no dot at all,
-  - the long press no longer opens a menu; the dp **slider dialog is deleted**, not just hidden.
-- Entries pack side by side in a `FlowRow`. While something is edited, a leftover gap of 96dp or
-  more shows a **plus** that opens the widget picker *there*. The plus is a **sibling** of the
-  entry in the FlowRow — as a child it is clamped to the entry's width and lands on the widget.
-- Width `0` means "fill the row" and is not written to JSON.
-- File layout: `data/MinusOneEntry.kt` (model + JSON), `ui/home/MinusOnePage.kt` (page).
+**Gone, commit 65446c.** Do not try to restore or rebuild it. It went through six
+attempts (stale AndroidView, one-way drag, writes to a stale snapshot, the gesture read
+from the wrong callback, only one MOVE arriving, overlap on drop) and never worked well
+enough to keep working on. The user asked for it to be taken out.
 
+MinusOnePage.kt, its two test files, the overlay, the gap-band swipe, both BackHandlers,
+the minusOneVisible blur, the picker branch and the settings row are all deleted.
+data/MinusOneEntry.kt and the minus_one_* preferences were **left in place on purpose** -
+nothing reads or writes them, so they are inert, and deleting a user's stored settings for
+no gain is worse than leaving them.
+
+Still there and unrelated: the home screen's own widget slot, the row swipe that opens an
+app's panel, and the notification panel with a working back-gesture.
 ## Settings
 
 - Page background is **true black** (`lerp(Color.Black, surface, dimPreviewReveal)`) — the
