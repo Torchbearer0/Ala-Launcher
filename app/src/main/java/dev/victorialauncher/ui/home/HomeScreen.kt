@@ -1110,6 +1110,16 @@ notification = notificationPreviewByPackage[item.app.componentName.packageName],
         ) {
             val corner = if (alignment == HomeAlignment.RIGHT) Alignment.BottomStart else Alignment.BottomEnd
 
+            // Further in from the corner than the rest of the home screen's content sits, and
+            // a little larger than a row's icon. The extreme corner of a phone is where the
+            // glass curves away and where most cases put a lip, so the very edge is the one
+            // place on the screen a press is least likely to land — the button was there
+            // because it is easy to reach, not because it is easy to hit. Insetting it puts it
+            // on flat glass, and a little more size gives the finger something to land on.
+            // The bump is applied here only: the icon-size setting is about how a row reads in
+            // the list, and a corner button that ignored it would look wrong next to them.
+            val cornerIconDp = iconSizeDp + 6
+
             // Whether the release belongs to the tap and hold recogniser. Cleared as each press begins
             // rather than at the end of a drag, because a drag that consumed its movement never
             // produces the click that would otherwise clear it — and a flag left set swallows
@@ -1125,7 +1135,7 @@ notification = notificationPreviewByPackage[item.app.componentName.packageName],
                 modifier = Modifier
                     .align(corner)
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .padding(horizontal = 30.dp, vertical = 36.dp)
                     .clip(CircleShape)
                     .combinedClickable(
                         onClick = {
@@ -1164,17 +1174,17 @@ notification = notificationPreviewByPackage[item.app.componentName.packageName],
                             if (swipedUp) cornerSwipeUpAction.invoke()
                         }
                     }
-                    .padding(8.dp),
+                    .padding(10.dp),
             ) {
                 if (cornerButtonIsSearch) {
                     Icon(
                         Icons.Filled.Search,
                         contentDescription = stringResource(R.string.applist_search),
                         tint = contentColor,
-                        modifier = Modifier.size(iconSizeDp.dp),
+                        modifier = Modifier.size(cornerIconDp.dp),
                     )
                 } else {
-                    cornerButtonApp?.let { AppIcon(app = it, sizeDp = iconSizeDp) }
+                    cornerButtonApp?.let { AppIcon(app = it, sizeDp = cornerIconDp) }
                         // No app of its own to draw, because the button is only bound to the
                         // hold or the swipe. Something has to be there to aim at, and the app's
                         // own icon would be a lie about what the tap does.
@@ -1182,7 +1192,7 @@ notification = notificationPreviewByPackage[item.app.componentName.packageName],
                             Icons.Filled.Apps,
                             contentDescription = stringResource(R.string.settings_corner_button),
                             tint = contentColor,
-                            modifier = Modifier.size(iconSizeDp.dp),
+                            modifier = Modifier.size(cornerIconDp.dp),
                         )
                 }
             }
