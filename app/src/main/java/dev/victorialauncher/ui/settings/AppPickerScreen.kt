@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import dev.victorialauncher.R
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.ui.common.AppIcon
+import dev.victorialauncher.ui.theme.GlowingRadioButton
 
 /**
  * Pick one app, or none. Same shape as the favorites picker, with radio buttons because these
@@ -86,7 +87,7 @@ fun AppPickerScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                     )
-                    RadioButton(selected = selectedKey == null, onClick = { onPick(null) })
+                    GlowingRadioButton(selected = selectedKey == null, onClick = { onPick(null) })
                 }
                 HorizontalDivider()
             }
@@ -106,7 +107,7 @@ fun AppPickerScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.weight(1f),
                         )
-                        RadioButton(selected = selectedKey == key, onClick = { onPickExtra(key) })
+                        GlowingRadioButton(selected = selectedKey == key, onClick = { onPickExtra(key) })
                     }
                     HorizontalDivider()
                 }
@@ -128,7 +129,7 @@ fun AppPickerScreen(
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
-                    RadioButton(selected = selectedKey == app.key, onClick = { onPick(app) })
+                    GlowingRadioButton(selected = selectedKey == app.key, onClick = { onPick(app) })
                 }
             }
         }

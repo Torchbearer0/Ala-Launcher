@@ -121,6 +121,7 @@ import dev.victorialauncher.R
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.victorialauncher.ui.theme.SHADOW_STRENGTH_RANGE
+import dev.victorialauncher.ui.theme.GlowingSlider
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1265,22 +1266,7 @@ internal fun SliderRow(
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.settings_more))
             }
         }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                // The filled part carries the accent, and the thumb is white rather than
-                // accented: on a black screen the accent is the one colour everything else is
-                // judged against, and a thumb in it would read as part of the track rather than
-                // as the handle sitting on it.
-                thumbColor = Color.White,
-                activeTrackColor = SettingsTone.accent,
-                inactiveTrackColor = SettingsTone.edge,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
-        )
+        GlowingSlider(value = value, onValueChange = onValueChange, valueRange = range)
     }
 }
 

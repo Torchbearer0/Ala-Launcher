@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.victorialauncher.data.IconShape
+import dev.victorialauncher.ui.theme.GlowAccent
+import dev.victorialauncher.ui.theme.GlowingSwitch
 
 /**
  * The parts of the settings screen every section is built from, kept out of [SettingsScreen]
@@ -73,11 +75,11 @@ internal object SettingsTone {
     /**
      * The one colour anything on this screen is allowed to be bright with.
      *
-     * Sailfish keeps a black screen and lets a handful of things shine on it, and what makes it
-     * work is that nothing else competes. A cold cyan rather than the app's own teal: it reads
-     * as light coming off the screen rather than as another material colour.
+     * The same value as every other lit control in the app - see [GlowAccent]. Held here as well
+     * so the settings screen can name it without reaching across packages for a colour, and so
+     * there is one place to change it if it ever needs to be.
      */
-    val accent = Color(0xFF6FE3F5)
+    val accent = GlowAccent
 }
 
 /**
@@ -243,49 +245,6 @@ internal fun SettingsSwitchRow(
         onClick = { onCheckedChange(!checked) },
         trailing = { GlowingSwitch(checked = checked, onCheckedChange = onCheckedChange) },
     )
-}
-
-/**
- * A switch that is lit rather than coloured.
- *
- * The same rule as the section marks: on a black screen a filled pill is just a shape, and what
- * makes a switch read as on is the light coming off it. Off it goes almost black and loses its
- * outline, so the whole row dims with it and the eye can find the ones that are on without
- * reading any of them.
- */
-@Composable
-internal fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Box(contentAlignment = Alignment.Center) {
-        // The glow. Behind the switch and larger than it, and only when it is on - a switch that
-        // shines whether it is on or not is not telling anyone anything.
-        if (checked) {
-            Box(
-                Modifier
-                    .size(58.dp)
-                    .graphicsLayer { scaleX = 1.5f; scaleY = 1.35f }
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                SettingsTone.accent.copy(alpha = 0.30f),
-                                Color.Transparent,
-                            ),
-                        ),
-                        CircleShape,
-                    ),
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.Transparent,
-                checkedTrackColor = SettingsTone.accent,
-                uncheckedThumbColor = SettingsTone.card,
-                uncheckedTrackColor = SettingsTone.edge,
-                uncheckedBorderColor = Color.Transparent,
-            ),
-        )
-    }
 }
 
 /**

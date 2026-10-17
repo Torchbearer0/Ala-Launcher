@@ -34,6 +34,7 @@ import dev.victorialauncher.data.PrivateSpace
 import dev.victorialauncher.data.concealsStored
 import dev.victorialauncher.data.restoreConcealed
 import dev.victorialauncher.ui.common.AppIcon
+import dev.victorialauncher.ui.theme.GlowingCheckbox
 
 /**
  * Tick the apps that belong in a folder, and drag the ones already in it into the order they
@@ -113,7 +114,7 @@ fun FolderAppsScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.weight(1f),
                         )
-                        Checkbox(checked = true, onCheckedChange = { onSetInFolder(app, false) })
+                        GlowingCheckbox(checked = true, onCheckedChange = { onSetInFolder(app, false) })
                     } else {
                         // Installed when it was added, gone now — or a shortcut its publisher
                         // withdrew. Shown rather than skipped so the count matches what is
@@ -125,7 +126,7 @@ fun FolderAppsScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                             modifier = Modifier.weight(1f),
                         )
-                        Checkbox(checked = true, onCheckedChange = { onForget(key) })
+                        GlowingCheckbox(checked = true, onCheckedChange = { onForget(key) })
                     }
                 }
             }
@@ -149,7 +150,7 @@ fun FolderAppsScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                     )
-                    Checkbox(checked = false, onCheckedChange = { onSetInFolder(app, true) })
+                    GlowingCheckbox(checked = false, onCheckedChange = { onSetInFolder(app, true) })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
             }

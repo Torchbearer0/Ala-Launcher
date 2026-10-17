@@ -35,6 +35,7 @@ import dev.victorialauncher.data.concealsStored
 import dev.victorialauncher.data.folderIdFromToken
 import dev.victorialauncher.data.restoreConcealed
 import dev.victorialauncher.ui.common.AppIcon
+import dev.victorialauncher.ui.theme.GlowingCheckbox
 import dev.victorialauncher.R
 import androidx.compose.ui.res.stringResource
 
@@ -146,7 +147,7 @@ fun ManageFavoritesScreen(
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.weight(1f),
                             )
-                            Checkbox(checked = true, onCheckedChange = { onSetFavorite(app, false) })
+                            GlowingCheckbox(checked = true, onCheckedChange = { onSetFavorite(app, false) })
                         }
 
                         // Whatever this key was is gone: an app uninstalled, or a shortcut
@@ -160,7 +161,7 @@ fun ManageFavoritesScreen(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                 modifier = Modifier.weight(1f),
                             )
-                            Checkbox(checked = true, onCheckedChange = { onForget(key) })
+                            GlowingCheckbox(checked = true, onCheckedChange = { onForget(key) })
                         }
                     }
                 }
@@ -183,7 +184,7 @@ fun ManageFavoritesScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(nameOverrides[app.key] ?: app.label, style = MaterialTheme.typography.bodyLarge)
                     }
-                    Checkbox(checked = false, onCheckedChange = { onSetFavorite(app, true) })
+                    GlowingCheckbox(checked = false, onCheckedChange = { onSetFavorite(app, true) })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
             }

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import dev.victorialauncher.R
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.ui.common.AppIcon
+import dev.victorialauncher.ui.theme.GlowingSwitch
 
 /**
  * Hide apps from the A-Z list.
@@ -115,7 +116,7 @@ private fun HiddenAppRow(
         AppIcon(app = app, sizeDp = minOf(iconSizeDp, 44))
         Spacer(Modifier.width(16.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = { onToggleHidden(app, it) })
+        GlowingSwitch(checked = checked, onCheckedChange = { onToggleHidden(app, it) })
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 }
