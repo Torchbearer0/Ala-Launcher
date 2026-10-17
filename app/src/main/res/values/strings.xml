@@ -384,10 +384,14 @@
     <string name="minus_one_mode_discover">Discover</string>
     <string name="minus_one_mode_widgets">Widgets and shortcuts</string>
     <string name="minus_one_discover_title">Discover</string>
-    <string name="minus_one_discover_body">Opens your search app\'s feed. Victoria has no internet access, so the feed is not shown here — tapping hands off to the app that already has it.</string>
+    <string name="minus_one_discover_body">Opens the Google app, which is where the feed already is. Ala has no internet access, so the news is fetched by Google and never by the launcher.</string>
+    <string name="minus_one_discover_open">Open Google</string>
+    <string name="minus_one_discover_missing">No Google app found on this device, so there is no feed to open.</string>
     <string name="minus_one_empty_title">Nothing on this page yet</string>
     <string name="minus_one_empty_body">Add a widget, or a shortcut to an app. Each one can be resized by dragging the line under it.</string>
     <string name="minus_one_resize">Resize</string>
+    <string name="minus_one_resize_width">Width: %1$s</string>
+    <string name="minus_one_resize_height">Height: %1$d dp</string>
     <string name="minus_one_remove">Remove from page</string>
     <string name="minus_one_change">Change what this page shows</string>
     <string name="minus_one_missing_app">App not installed</string>
