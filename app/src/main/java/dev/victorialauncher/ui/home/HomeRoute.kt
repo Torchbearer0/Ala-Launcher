@@ -81,6 +81,7 @@ import dev.victorialauncher.media.NotificationActionEntry
 import dev.victorialauncher.media.NowPlayingListenerService
 import dev.victorialauncher.ui.notifications.NotificationPanel
 import dev.victorialauncher.ui.common.AppPanel
+import dev.victorialauncher.ui.common.MenuBlur
 import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.applist.AppListModel
 import dev.victorialauncher.ui.applist.AppListScreen
@@ -285,7 +286,6 @@ fun HomeRoute(
     // Which app's panel the swipe opened, or null. Held by the destination because the strip
     // and the edge zones are drawn here, after HomeScreen, and would cover a panel drawn there.
     var panelFor by remember { mutableStateOf<Triple<AppInfo, Dp, Dp>?>(null) }
-    var homeMenuOpen by remember { mutableStateOf(false) }
     val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = false)
     val notifications by NotificationBus.notifications.collectAsState()
 
@@ -687,7 +687,7 @@ fun HomeRoute(
                 notificationPanelVisible -> 18.dp
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
-                homeMenuOpen -> 10.dp
+                MenuBlur.anyOpen -> 10.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
@@ -876,7 +876,6 @@ fun HomeRoute(
                 },
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
-                onMenuOpen = { homeMenuOpen = it },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -974,8 +973,10 @@ fun HomeRoute(
         // therefore drawn over a sharp, unblurred list and its near-clear fill had nothing
         // behind it to read against. Same treatment, applied to whichever layer the panel
         // actually has in front of it.
+        // A long-press menu is the same case as a panel and gets the same answer: the drawer
+        // blurs while one is open, or the row's menu sits over a sharp list and cannot be read.
         val drawerBlur by animateDpAsState(
-            targetValue = if (panelFor != null) 10.dp else 0.dp,
+            targetValue = if (panelFor != null || MenuBlur.anyOpen) 10.dp else 0.dp,
             animationSpec = tween(OVERLAY_BLUR_MS),
             label = "drawerBlur",
         )

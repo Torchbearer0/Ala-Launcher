@@ -250,8 +250,6 @@ fun HomeScreen(
     onFavoritesBoundsChanged: (topPx: Float, bottomPx: Float) -> Unit,
     contentColor: Color,
     showFavoriteLabels: Boolean,
-    /** Reports whether a long-press app menu is open, so the home screen can blur behind it. */
-    onMenuOpen: (Boolean) -> Unit = {},
     alignment: HomeAlignment,
     iconSide: IconSide,
     editMode: Boolean,
@@ -296,9 +294,6 @@ fun HomeScreen(
     }
 
     var menuForKey by remember { mutableStateOf<String?>(null) }
-    // Keep the caller informed so the screen behind the long-press menu can blur the
-    // same way it does behind the app panel.
-    LaunchedEffect(menuForKey) { onMenuOpen(menuForKey != null) }
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var renameDialogFor by remember { mutableStateOf<AppInfo?>(null) }
     var folderMenuFor by remember { mutableStateOf<String?>(null) }
