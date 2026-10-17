@@ -98,7 +98,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
@@ -459,6 +458,36 @@ fun HomeScreen(
     // of asking for another one.
     var favBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
+    /**
+     * Where the widget actually is, in window pixels, measured the same way as the favorites.
+     *
+     * Only needed to tell the widget apart from the empty screen around it. It used to be used
+     * the other way round — to measure the single gap between the widget and the first row —
+     * which made the gesture depend on that one band being big enough to aim at, so tightening
+     * the padding quietly turned the feature off rather than making it harder to use.
+     */
+    var widgetBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+
+    val minusOneSwipeThreshold = with(LocalDensity.current) { 56.dp.toPx() }
+
+    fun refreshWidgetBounds() {
+        val widget = displayItems.firstOrNull { it is HomeItem.Widget } ?: return
+        val key = measureKey(widget)
+        val top = itemTops[key] ?: return
+        val bottom = top + (itemHeights[key] ?: return)
+        val current = widgetBounds
+        if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
+            widgetBounds = top to bottom
+        }
+    }
+
+    /** Whether a touch at this height landed on something that is drawn rather than on space. */
+    fun isOnContent(y: Float): Boolean {
+        widgetBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        favBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        return false
+    }
+
     /** Recomputed after each row reports, against the list as it is now rather than as it was. */
     fun refreshFavBounds() {
         val first = displayItems.firstOrNull { it !is HomeItem.Widget } ?: return
@@ -471,11 +500,16 @@ fun HomeScreen(
         if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
             favBounds = top to bottom
         }
+        refreshWidgetBounds()
     }
 
     LaunchedEffect(favBounds) {
         val (top, bottom) = favBounds ?: return@LaunchedEffect
         onFavoritesBoundsChanged(top, bottom)
+    }
+
+    LaunchedEffect(favBounds) {
+        refreshWidgetBounds()
     }
 
     val peekPullPx = with(density) { 30.dp.toPx() }
@@ -601,6 +635,34 @@ fun HomeScreen(
             // A drag that starts on the widget or on a row is not ours. Rows have a horizontal
             // swipe of their own for app shortcuts, and stealing it would be trading a gesture
             // that works for one that does not.
+            .pointerInput(minusOneEnabled, favBounds, widgetBounds) {
+                if (!minusOneEnabled) return@pointerInput
+                // Written out rather than detectHorizontalDragGestures: that waits on a slop
+                // check that a consumed down can never satisfy, so on this screen it silently
+                // never fires. The down here is claimed by the vertical pull further down the
+                // chain, and that claim is left alone — the two gestures are told apart by which
+                // way the finger travels, not by who wins.
+                //
+                // Measured on absolute positions, not positionChange(), for the same reason:
+                // that reports zero for a consumed change, so travel would always read as 0.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startedOnEmptySpace = !isOnContent(rootY + down.position.y)
+                    val startX = down.position.x
+                    var furthestX = startX
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        furthestX = maxOf(furthestX, change.position.x)
+                    }
+                    // Furthest rather than final: a finger that travels right and comes back
+                    // before lifting has still been to the right, and that is what it meant.
+                    if (startedOnEmptySpace && furthestX - startX > minusOneSwipeThreshold) {
+                        onOpenMinusOne()
+                    }
+                }
+            }
             .draggable(
                 orientation = Orientation.Vertical,
                 enabled = !editMode && liveSlot == null,
@@ -671,7 +733,7 @@ fun HomeScreen(
                         // the change where it decides a horizontal drag has started - whether or
                         // not this gesture turns out to be eligible. This handler sits on the
                         // whole home screen, so that made it swallow every horizontal drag
-                        // anywhere on it, and the pager to the left of home never saw one.
+                        // anywhere on it, including the one that opens the page on the left.
                         // Nothing is consumed here unless the drag is genuinely a quick launch.
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -679,13 +741,12 @@ fun HomeScreen(
                             // the widget, and belongs to them.
                             val eligible = !editMode && down.position.y > offsetY.value + contentHeight
                             val startX = down.position.x
-                            var travelled = 0f
                             while (true) {
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                 if (!change.pressed) break
                                 if (eligible) {
-                                    travelled = change.position.x - startX
+                                    val travelled = change.position.x - startX
                                     if (abs(travelled) > quickLaunchPx) {
                                         change.consume()
                                         onQuickLaunch(
@@ -982,19 +1043,6 @@ fun HomeScreen(
                                 onEditLayout = { onEditModeChange(true) },
                                 actions = widgetActions,
                                 homeIntentTick = homeIntentTick,
-                                // The page to the left opens from a swipe right across the widget
-                                // area, and only there. A favourite row needs its sideways swipe
-                                // for the app panel and the space under the favourites needs it
-                                // for picking a quick-launch slot, so the widget is the one part
-                                // of the home screen not already doing sideways work.
-                                //
-                                // Handled inside the widget's own touch layer rather than by a
-                                // handler around it: a hosted widget is an Android view handling
-                                // its own touch stream, and a pointerInput waiting behind it for
-                                // an unconsumed drag is never given one.
-                                onSwipeRight = {
-                                    if (minusOneEnabled) onOpenMinusOne()
-                                },
                                 modifier = Modifier
                                     .offset(x = widgetOffsetXDp.dp)
                                     .fillMaxWidth()

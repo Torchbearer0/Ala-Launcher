@@ -28,29 +28,11 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
     /** x/y are the press position in this view's local pixel coordinates. */
     var onLongPress: ((x: Float, y: Float) -> Unit)? = null
 
-    /**
-     * Fired once when a press that began here is dragged to the right.
-     *
-     * Here rather than in a Compose handler around the widget because a hosted widget is an
-     * Android view that handles its own touch stream: a pointerInput waiting behind it for an
-     * unconsumed drag is never given one. This class already sits between the widget and the
-     * home screen and already decides which gestures it keeps, so the page on the left is read
-     * here alongside the long press and the vertical scroll.
-     */
-    var onSwipeRight: (() -> Unit)? = null
-
     private var longPressFired = false
-
-    /** How far this gesture has been to the right, and whether it has already been reported. */
-    private var swipeRightPx = 0f
-    private var swipeRightFired = false
 
     /** Where the current gesture began, so its direction can be judged as it moves. */
     private var downX = 0f
     private var downY = 0f
-
-    /** The furthest right this gesture has reached, so the test is about the whole drag. */
-    private var furthest = 0f
 
     /** Set once the widget has taken this gesture, so the claim is made once and not per move. */
     private var claimed = false
@@ -77,31 +59,12 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
                 claimed = false
-                swipeRightPx = 0f
-                swipeRightFired = false
                 downX = ev.x
                 downY = ev.y
                 canScroll = hasScrollableContent()
             }
 
-            MotionEvent.ACTION_MOVE -> {
-                // Read every move until it fires, rather than settling on the first sample that
-                // looks rightwards: a thumb that comes down across and then carries on to the
-                // right should still count, and twelve pixels of noise should not decide it.
-                if (!swipeRightFired) {
-                    val dx = ev.x - downX
-                    if (dx > furthest) {
-                        furthest = dx
-                        // Read with the same margin the vertical claim uses, so a drag that is
-                        // really a scroll does not get taken sideways on a wobble.
-                        if (dx > touchSlop && dx > abs(ev.y - downY) * DIRECTION_MARGIN) {
-                            swipeRightFired = true
-                            onSwipeRight?.invoke()
-                        }
-                    }
-                }
-
-                if (!claimed && canScroll) {
+            MotionEvent.ACTION_MOVE -> if (!claimed && canScroll) {
                 val dx = abs(ev.x - downX)
                 val dy = abs(ev.y - downY)
                 // Claimed early, and only for up and down.
@@ -132,7 +95,6 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
                 if (dy > decisionSlop && dy > dx * DIRECTION_MARGIN) {
                     claimed = true
                     parent?.requestDisallowInterceptTouchEvent(true)
-                }
                 }
             }
         }
@@ -170,9 +132,6 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             longPressFired = false
             claimed = false
-            swipeRightPx = 0f
-            swipeRightFired = false
-            furthest = 0f
             parent?.requestDisallowInterceptTouchEvent(false)
         }
         return true

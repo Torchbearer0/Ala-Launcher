@@ -22,20 +22,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -698,17 +688,6 @@ fun HomeRoute(
             )
         }
 
-        // The page is an overlay again, not a pager page, and the swipe that opens it is confined to
-        // the widget area.
-        //
-        // The pager version broke two things that are worth more than the gesture is: swipe right
-        // on a favourite row stopped opening that app's panel, and the swipe below the favourites
-        // stopped picking the quick-launch slot. Both are the same axis, and a pager claims all of
-        // them. The page is a side destination, not a second home screen, so it does not need to
-        // be one — it needs one gesture in one place, and the widget area is the only part of the
-        // home screen that is not already doing sideways work.
-        var minusOneVisible by remember { mutableStateOf(false) }
-
         // Rounded up a little with the panel opening rather than snapping: the blur is what
         // makes the panel read as being in front of the home screen, and a value that jumps
         // reads as the home screen glitching instead.
@@ -724,100 +703,18 @@ fun HomeRoute(
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
                 MenuBlur.anyOpen -> 10.dp
+                // Deliberately nothing for the page on the left. It used to blur the home
+                // screen behind itself, which meant that with the page set to widgets the home
+                // screen sat blurred permanently with nothing drawn over it - it reads as the
+                // whole launcher being broken rather than one effect stuck on. The page gets a
+                // light scrim of its own instead, which is what a launcher can actually do:
+                // the wallpaper is the window's background, not a view this app owns, so there
+                // is nothing here to hand a RenderEffect.
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
             label = "overlayBlur",
         )
-
-        /** Rewrites the page's stack, leaving its mode alone. */
-        fun updateMinusOneEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
-            scope.launch { app.prefs.setMinusOne(minusOne.mode, transform(minusOne.entries)) }
-        }
-
-        LaunchedEffect(minusOne.mode) {
-            // Turning the page off while it is showing would leave a blank page a swipe away
-            // from home, with nothing on it and no way to say why.
-            if (minusOne.mode == MinusOneMode.OFF) minusOneVisible = false
-        }
-        // HOME goes home, from wherever on the left page the user was.
-        LaunchedEffect(homeIntentTick) {
-            if (homeIntentTick > 0) minusOneVisible = false
-        }
-        // BACK leaves the page rather than the launcher, or the page is a place the only way out
-        // of is one specific gesture.
-        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
-
-        // Kept composed and measured while hidden, just never placed. Not placing it means it
-        // neither draws nor receives touches.
-        val minusOneAlpha by animateFloatAsState(
-            targetValue = if (minusOneVisible) 1f else 0f,
-            animationSpec = tween(240, easing = FastOutSlowInEasing),
-            label = "minusOneAlpha",
-        )
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    alpha = minusOneAlpha
-                    // A layer rather than an offset modifier, because a layer can see its own
-                    // size and this one's is only known after layout - which is exactly what an
-                    // unplaced overlay measures as zero.
-                    translationX = -(1f - minusOneAlpha) * size.width
-                }
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    if (minusOneVisible) {
-                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                    } else {
-                        layout(0, 0) {}
-                    }
-                }
-                // A decisive drag either way closes it. Nothing on the page answers to a sideways
-                // drag - its content is one vertical stack - and dragging back the way you came
-                // is a drag to the left on a page that sits to the left, which counting only
-                // rightward travel would have ignored.
-                .pointerInput(Unit) {
-                    if (!minusOneVisible) return@pointerInput
-                    val threshold = with(density) { 72.dp.toPx() }
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        var travelled = 0f
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            change.consume()
-                            travelled = change.position.x - down.position.x
-                        }
-                        if (kotlin.math.abs(travelled) > threshold) minusOneVisible = false
-                    }
-                },
-        ) {
-            MinusOnePage(
-                page = minusOne,
-                appsByKey = appsByKey,
-                contentColor = settings.contentColor,
-                onAddWidget = onAddWidgetToMinusOne,
-                onResize = { index, widthDp, heightDp ->
-                    updateMinusOneEntries { entries ->
-                        val entry = entries.getOrNull(index) ?: return@updateMinusOneEntries entries
-                        entries.toMutableList().apply { set(index, entry.withSize(widthDp, heightDp)) }
-                    }
-                },
-                onRemove = { index ->
-                    val entry = minusOne.entries.getOrNull(index)
-                    if (entry is MinusOneEntry.Widget && entry.widgetId > 0) {
-                        runCatching { app.widgetHost.deleteAppWidgetId(entry.widgetId) }
-                    }
-                    updateMinusOneEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
-                },
-                onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
-                onAppInfo = { id -> widgetActions.onAppInfo(id) },
-                onLaunch = { launchEntry(it) },
-                onOpenSettings = { onNavigate("settings") },
-            )
-        }
-
         Box(
             modifier = Modifier
                 .graphicsLayer { alpha = homeAlpha }
@@ -1007,9 +904,7 @@ fun HomeRoute(
                     // Discover has nothing to draw here - it is the Google app, not a feed of
                     // ours - so reaching the page is the whole gesture and the app opens with
                     // it. Asking for a button first made the page a dead end with a prompt.
-                    if (minusOne.mode == MinusOneMode.DISCOVER) {
-                        openGoogleApp(context)
-                    }
+                    if (minusOne.mode == MinusOneMode.DISCOVER) openGoogleApp(context)
                 },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
@@ -1229,6 +1124,91 @@ fun HomeRoute(
             )
         }
 
+        // The page to the left of home. Kept composed and unplaced when hidden, the same way the
+        // drawer is, so opening it is not a first composition of a screenful of widgets. Slides
+        // in from the left rather than fading, because it came from a swipe to the left and
+        // leaving by the same gesture reads as the same journey in reverse.
+        val minusOneProgress by animateFloatAsState(
+            targetValue = if (minusOneVisible) 1f else 0f,
+            animationSpec = tween(260, easing = FastOutSlowInEasing),
+            label = "minusOneProgress",
+        )
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = minusOneProgress
+                    // A layer rather than an offset modifier because it can see its own size,
+                    // and the page's is only known after layout — which is exactly what an
+                    // unplaced overlay measures as zero.
+                    translationX = -(1f - minusOneProgress) * size.width
+                }
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    if (minusOneVisible) {
+                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                    } else {
+                        layout(0, 0) {}
+                    }
+                }
+                // A decisive drag either way closes the page, because there is nothing else on it for a
+                // sideways drag to mean: its content is one vertical stack, and the entries in
+                // it answer to a long press rather than a drag. Counting only the direction that
+                // opened it left the obvious way out — dragging back the way you came, which
+                // on a page that sits to the left is a drag to the *left* — doing nothing, and
+                // BACK as the only reliable exit.
+                .pointerInput(Unit) {
+                    if (!minusOneVisible) return@pointerInput
+                    val threshold = with(density) { 72.dp.toPx() }
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var travelled = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            travelled = change.position.x - down.position.x
+                        }
+                        if (kotlin.math.abs(travelled) > threshold) minusOneVisible = false
+                    }
+                },
+        ) {
+            fun updateEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
+                scope.launch { app.prefs.setMinusOne(minusOne.mode, transform(minusOne.entries)) }
+            }
+
+            MinusOnePage(
+                page = minusOne,
+                appsByKey = appsByKey,
+                contentColor = settings.contentColor,
+                onAddWidget = onAddWidgetToMinusOne,
+                onResize = { index, widthDp, heightDp ->
+                    updateEntries { entries ->
+                        val entry = entries.getOrNull(index) ?: return@updateEntries entries
+                        entries.toMutableList().apply { set(index, entry.withSize(widthDp, heightDp)) }
+                    }
+                },
+                onRemove = { index ->
+                    val entry = minusOne.entries.getOrNull(index) ?: return@MinusOnePage
+                    // The host id has to be released, not just forgotten: left allocated, the
+                    // provider keeps broadcasting updates to a widget nobody can see.
+                    if (entry is MinusOneEntry.Widget && entry.widgetId > 0) {
+                        runCatching { app.widgetHost.deleteAppWidgetId(entry.widgetId) }
+                    }
+                    updateEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
+                },
+                onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
+                onAppInfo = { id -> widgetActions.onAppInfo(id) },
+                onLaunch = { launchEntry(it) },
+                onOpenSettings = { onNavigate("settings") },
+            )
+        }
+
+        // Back leaves the page rather than the launcher. Without this the page is a place the
+        // only way out of is a swipe in one exact direction, and BACK — which the user has just
+        // been pressing to get out of everything else on this screen — would close the app.
+        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
+
         // Above everything else, and last, so a pull that opens it cannot be mistaken for a
         // pull that opened the list underneath. Only drawn while open: keeping a full-screen
         // scrim composed behind the home screen would sit over every tap on it.
@@ -1427,11 +1407,9 @@ fun HomeRoute(
                 },
             )
         }
+        }
     }
 }
-}
-
-private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
 
 /**
  * The Google app, by package first and by its search action second. False when neither exists.
@@ -1455,6 +1433,8 @@ private fun openGoogleApp(context: android.content.Context): Boolean {
 
 private const val GOOGLE_SEARCH_PACKAGE = "com.google.android.googlequicksearchbox"
 private const val GOOGLE_SEARCH_ACTION = "com.google.android.gsf.search.action.GOOGLE_SEARCH"
+
+private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
 
 /** Display and behavior settings the home destination reads, grouped so they travel as one. */
 @Immutable
