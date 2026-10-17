@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -104,6 +105,18 @@ fun EdgeScrubber(
     val bellPx = BELL_AMPLITUDE_DP * density
     val currentOpen by rememberUpdatedState(listOpen)
     val currentOnOpen by rememberUpdatedState(onOpen)
+
+    // The composable can leave composition with the finger still down: opening the drawer
+    // removes the home strip while a swipe is in flight, and Compose cancels the gesture's
+    // coroutine rather than letting it finish. Without this, scrub stays active, the strip
+    // keeps bowing at the last letter, and nothing answers a drag until the finger lifts and
+    // a fresh gesture starts. Drawing first and catching only the taps that land on nothing
+    // matters here too: this holder must be cleaned up by the composable that owns it.
+    state?.let { holder ->
+        DisposableEffect(holder) {
+            onDispose { holder.stop() }
+        }
+    }
 
     Box(
         modifier = modifier
