@@ -663,28 +663,33 @@ fun HomeScreen(
                 // Only worth a pointer handler when something is actually bound to it.
                 if (quickLaunchEnabled) {
                     Modifier.pointerInput(editMode, contentHeight) {
-                        var eligible = false
-                        var travelled = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { start ->
-                                // The empty space under the whole stack. Anywhere higher is a
-                                // row, the widget, or Now Playing, and belongs to them.
-                                eligible = !editMode && start.y > offsetY.value + contentHeight
-                                travelled = 0f
-                            },
-                            onDragEnd = {
-                                if (eligible && abs(travelled) > quickLaunchPx) {
-                                    onQuickLaunch(
-                                        if (travelled < 0f) QuickLaunchSlot.LEFT else QuickLaunchSlot.RIGHT
-                                    )
+                        // Spelled out rather than detectHorizontalDragGestures, which consumes
+                        // the change where it decides a horizontal drag has started - whether or
+                        // not this gesture turns out to be eligible. This handler sits on the
+                        // whole home screen, so that made it swallow every horizontal drag
+                        // anywhere on it, and the pager to the left of home never saw one.
+                        // Nothing is consumed here unless the drag is genuinely a quick launch.
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            // The empty space under the whole stack. Anywhere higher is a row or
+                            // the widget, and belongs to them.
+                            val eligible = !editMode && down.position.y > offsetY.value + contentHeight
+                            val startX = down.position.x
+                            var travelled = 0f
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                if (eligible) {
+                                    travelled = change.position.x - startX
+                                    if (abs(travelled) > quickLaunchPx) {
+                                        change.consume()
+                                        onQuickLaunch(
+                                            if (travelled < 0f) QuickLaunchSlot.LEFT else QuickLaunchSlot.RIGHT
+                                        )
+                                        break
+                                    }
                                 }
-                                eligible = false
-                            },
-                            onDragCancel = { eligible = false },
-                        ) { change, dx ->
-                            if (eligible) {
-                                change.consume()
-                                travelled += dx
                             }
                         }
                     }

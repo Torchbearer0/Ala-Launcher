@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onSizeChanged
@@ -101,6 +104,9 @@ private val ENTRY_GAP_DP = 8
 private val HANDLE_TOUCH_DP = 26
 
 private val HANDLE_CORNER_DP = 34
+
+/** The add-widget control. Big enough to be a target without covering a widget. */
+private const val FAB_SIZE_DP = 60
 
 /**
  * The page to the left of the home screen, reached by swiping right through the gap between the
@@ -298,8 +304,15 @@ private fun WidgetStackPage(
     // a number the first time anyone drags it.
     val measuredWidthDp = remember { mutableStateMapOf<Int, Int>() }
 
-    Column(
-        modifier = modifier
+    Box(modifier = modifier.fillMaxSize()) {
+        // A scrim behind the stack rather than a blur, because a launcher cannot blur the
+        // system wallpaper - the wallpaper is the window's background, not a view this app owns,
+        // so there is nothing here to hand a RenderEffect. What a scrim buys is the same thing
+        // the blur was after: widgets that are hard to read on a busy wallpaper stop being hard
+        // to read. Kept light, so a plain wallpaper still shows through.
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)))
+        Column(
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
@@ -369,16 +382,32 @@ private fun WidgetStackPage(
         }
 
         if (entries.isNotEmpty()) {
-            OutlinedButton(
-                onClick = onAddWidget,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 32.dp),
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.widget_add))
-            }
+            Spacer(Modifier.height(72.dp))
+        }
+        }
+
+        // The one control this page has, as a floating circle in the corner rather than a full
+        // width button under the list. It sits out of the way of the widgets, stays in the same
+        // place whatever is on the page, and never pushes the stack around as things are added.
+        // Present even when the page is empty, where it is the obvious next thing to do.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 20.dp, bottom = 20.dp)
+                .size(FAB_SIZE_DP.dp)
+                .shadow(10.dp, CircleShape)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(onClick = onAddWidget),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = stringResource(R.string.widget_add),
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 

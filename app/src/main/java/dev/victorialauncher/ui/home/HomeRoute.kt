@@ -27,8 +27,15 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -702,9 +709,6 @@ fun HomeRoute(
         // their own horizontal swipe first and consume it, so an app shortcut still swipes
         // open instead of turning the screen into the page.
         val pagerState = rememberPagerState(initialPage = 1) { 2 }
-        val minusOneAtHomePage by remember {
-            derivedStateOf { pagerState.currentPage == 1 && pagerState.currentPageOffsetFraction == 0f }
-        }
         var minusOneResizing by remember { mutableStateOf(false) }
 
         // Rounded up a little with the panel opening rather than snapping: the blur is what
@@ -722,11 +726,6 @@ fun HomeRoute(
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
                 MenuBlur.anyOpen -> 10.dp
-                // Only in widget mode: the page is a stack of widgets over the wallpaper, and
-                // a clock face or a calendar drawn straight onto a busy background is hard to
-                // read and looks pasted on. The Discover page is one card on the wallpaper and
-                // does not need it — blurring there would only grey out the card for nothing.
-                minusOneAtHomePage && minusOne.mode == MinusOneMode.WIDGETS -> 14.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
@@ -885,7 +884,17 @@ fun HomeRoute(
                 cornerLongPressAction = longPressAction,
                 cornerSwipeUpAction = swipeUpAction,
                 favoritesReorderable = settings.favoritesSource == FavoritesSource.MANUAL,
-                shortcutSwipe = settings.shortcutSwipe,
+                // The page's swipe and a row's shortcut swipe are the same axis, and they were
+                // fighting over it: the row consumed the drag, so on a home screen filled with
+                // favourites — which is most of them — swipe right reached the page only where
+                // there happened to be nothing. The page is the whole point of the gesture now,
+                // so a rightward row swipe goes to the page and the shortcut moves to the other
+                // direction rather than being lost. Left stays left either way.
+                shortcutSwipe = if (minusOne.mode != MinusOneMode.OFF && settings.shortcutSwipe == ShortcutSwipe.RIGHT) {
+                    ShortcutSwipe.LEFT
+                } else {
+                    settings.shortcutSwipe
+                },
                 favorites = favorites,
                 notificationPreviewByPackage = remember(notifications) {
                     newestPreviewsByPackage(notifications)
@@ -1065,6 +1074,48 @@ fun HomeRoute(
         // be somewhere the only way out of is one specific gesture.
         BackHandler(enabled = pagerState.currentPage == 0) {
             scope.launch { pagerState.animateScrollToPage(1) }
+        }
+
+        // Two dots along the bottom, because nothing on the home screen otherwise says there is
+        // another page. A gesture nobody can see is a gesture nobody finds, and the cost of
+        // these is two dots that fade out a moment after the swipe settles rather than sitting
+        // permanently over the wallpaper.
+        if (minusOne.mode != MinusOneMode.OFF && !appListVisible) {
+            var dotsVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.isScrollInProgress || pagerState.currentPageOffsetFraction != 0f }
+                    .collect { scrolling ->
+                        if (scrolling) dotsVisible = true
+                    }
+                // Linger briefly after a swipe settles, so the dots are still there to be seen
+                // by anyone who was not looking at the moment of the movement.
+                delay(900)
+                dotsVisible = false
+            }
+            val dotsAlpha by animateFloatAsState(
+                targetValue = if (dotsVisible) 1f else 0f,
+                animationSpec = tween(200),
+                label = "homePageDots",
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 8.dp)
+                    .graphicsLayer { alpha = dotsAlpha },
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                repeat(2) { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(if (index == pagerState.currentPage) 8.dp else 6.dp)
+                            .background(
+                                settings.contentColor.copy(alpha = if (index == pagerState.currentPage) 0.9f else 0.4f),
+                                CircleShape,
+                            ),
+                    )
+                }
+            }
         }
 
         // Kept composed and measured even while hidden, just never placed. Not placing it
