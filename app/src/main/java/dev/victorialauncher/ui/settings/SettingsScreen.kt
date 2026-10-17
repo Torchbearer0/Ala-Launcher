@@ -448,10 +448,11 @@ fun SettingsScreen(
             )
         },
         SettingsEntry(SettingsSection.HOME, stringResource(R.string.settings_dim_home), "dim wallpaper") {
+            WallpaperDimPeek(alpha = dimPreviewValue)
             SliderRow(
                 label = stringResource(R.string.settings_dim_home),
-                value = dimHomeAlpha, range = 0f..0.85f,
-                valueLabel = "${(dimHomeAlpha * 100).roundToInt()}%",
+                value = dimPreviewValue, range = 0f..0.85f,
+                valueLabel = "${(dimPreviewValue * 100).roundToInt()}%",
                 // Rounded to whole percent, so dragging lands where the buttons do.
                 onValueChange = {
                     val next = (it * 100).roundToInt() / 100f
@@ -1155,52 +1156,24 @@ fun SettingsScreen(
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
-        SectionLabel(title)
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(content = content)
-        }
+        SettingsSectionLabel(title)
+        SettingsSurface(content = content)
     }
 }
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
-    )
+    SettingsSectionLabel(text)
 }
 
 @Composable
 private fun RowDivider() {
-    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), modifier = Modifier.padding(horizontal = 16.dp))
+    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), modifier = Modifier.padding(start = 22.dp, end = 22.dp))
 }
 
 @Composable
 private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        // The row is the target, so the switch itself is not one. With both taking a tap, a
-        // press on the switch toggled it and then the row toggled it back, which read as a
-        // switch that would not stay where it was put.
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
-        )
-    }
+    SettingsSwitchRow(title = label, checked = checked, onCheckedChange = onCheckedChange)
 }
 
 @Composable
@@ -1210,28 +1183,7 @@ private fun SwitchRowWithDetail(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
-        // See SwitchRow: the row owns the tap, so the switch does not take one of its own.
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
-        )
-    }
+    SettingsSwitchRow(title = label, subtitle = detail, checked = checked, onCheckedChange = onCheckedChange)
 }
 
 /** Slider plus a pair of steppers, since dragging to an exact value is fiddly. */
@@ -1446,6 +1398,9 @@ private fun IconShapeRow(selected: IconShape, onSelect: (IconShape) -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
         )
+        // The shape is the whole setting, and four chips spelling out "rounded"/"square"/
+        // "squircle" cannot show what any of them looks like on a real icon.
+        IconShapePeek(shape = selected)
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1778,6 +1733,9 @@ private fun QuickLaunchRow(label: String, value: String?, onClick: () -> Unit) {
 @Composable
 private fun AlignmentRow(label: String, selected: HomeAlignment, onSelect: (HomeAlignment) -> Unit) {
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        // Peek above the chips: the whole meaning of this setting is where things end up on the
+        // screen, and three bars showing that is a stronger answer than a chip that says "left".
+        AlignmentPeek(alignedRight = selected == HomeAlignment.RIGHT, label = label)
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
