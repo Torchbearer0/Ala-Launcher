@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -204,14 +205,27 @@ fun AppIcon(app: AppInfo, sizeDp: Int, modifier: Modifier = Modifier) {
     )
 
     val cacheKey = iconCacheKey(app, iconPackPackage, overrideValue, px, style)
-    val bitmap: ImageBitmap? = remember(cacheKey) {
-        IconCache.get(cacheKey) ?: runCatching {
-            val drawable = resolveDrawable(context, victoriaApp, app, iconPackPackage, overrideValue)
-            renderIcon(drawable, px, style.shape, style.themed, style.background, style.foreground)
-                .asImageBitmap()
-                .also { IconCache.put(cacheKey, it) }
-        }.getOrNull()
+    // Read synchronously, so a warm icon is drawn on this very frame and never flickers through
+    // an empty one on the way in from the background.
+    val cached: ImageBitmap? = remember(cacheKey) { IconCache.get(cacheKey) }
+    // A miss decodes off the main thread rather than inside the composition that asked for it.
+    // Decoding a drawable is tens of milliseconds, and the first screenful of rows that misses
+    // does it once each, back to back — on the main thread that is a stall long enough to read
+    // as the app list stuttering while it opens, which is exactly what it looked like on a
+    // launcher coming back from hours in the background with nothing of its cache left. The row
+    // draws without its icon for a frame or two instead, and the same code path is what
+    // [warmIconCache] already does for the rest of the device's apps.
+    val decoded: ImageBitmap? by produceState<ImageBitmap?>(initialValue = null, cacheKey) {
+        value = cached ?: withContext(Dispatchers.IO) {
+            runCatching {
+                val drawable = resolveDrawable(context, victoriaApp, app, iconPackPackage, overrideValue)
+                renderIcon(drawable, px, style.shape, style.themed, style.background, style.foreground)
+                    .asImageBitmap()
+                    .also { IconCache.put(cacheKey, it) }
+            }.getOrNull()
+        }
     }
+    val bitmap: ImageBitmap? = cached ?: decoded
 
     // Badged rather than drawn into the bitmap: the count changes while the icon does not, and
     // baking it in would throw away the cached icon every time a notification arrived.
