@@ -77,8 +77,6 @@ import dev.victorialauncher.data.Folder
 import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.QuickLaunchSlot
 import dev.victorialauncher.data.PaddingSlot
-import dev.victorialauncher.data.withSize
-import dev.victorialauncher.data.withPosition
 import kotlinx.coroutines.flow.first
 import dev.victorialauncher.data.folderToken
 
