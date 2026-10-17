@@ -158,17 +158,13 @@ fun MinusOnePage(
 }
 
 /**
- * The Discover option: opening this page opens the Google app, which is where the feed is.
+ * The Discover option, which is the Google app rather than a page of ours.
  *
- * Not a feed of our own. Drawing one here would mean a WebView loading a Google page, and a
- * WebView needs the INTERNET permission — which this app has never held, on purpose. Handing off
- * to the app that already has the feed costs no permission at all, shows exactly the same
- * content, and leaves the fetching to Google rather than to a launcher that has no business
- * doing it.
- *
- * Launches as the page is opened rather than waiting for a tap, because the page's only job is
- * to be the way there. If there is no Google app to hand off to, it says so instead of opening
- * and closing again.
+ * There is normally nothing to see here at all: reaching this page opens Google straight away,
+ * and Google is what is on screen afterwards. This is only what is left behind if Google is not
+ * installed - there is no feed to show without it, because a feed of our own would mean a
+ * WebView loading a Google page, and a WebView needs the INTERNET permission this app has never
+ * held.
  */
 @Composable
 private fun DiscoverPage(
@@ -176,95 +172,33 @@ private fun DiscoverPage(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    var handedOff by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        handedOff = openGoogle(context)
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        if (handedOff) {
-            // The Google app is already in front; this is only what is left behind if it is
-            // closed again straight away.
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    stringResource(R.string.minus_one_discover_title),
-                    color = contentColor,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.minus_one_discover_body),
-                    color = contentColor.copy(alpha = 0.75f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { handedOff = openGoogle(context) }) {
-                    Icon(Icons.Filled.Apps, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.minus_one_discover_open))
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.minus_one_change))
-                }
-            }
-        } else {
-            // No Google app to hand off to. Nothing here can fetch the feed instead, because
-            // having no Google app is exactly the case where there is nothing to show it in.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    stringResource(R.string.minus_one_discover_title),
-                    color = contentColor,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.minus_one_discover_missing),
-                    color = contentColor.copy(alpha = 0.75f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.minus_one_change))
-                }
-            }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(R.string.minus_one_discover_title),
+            color = contentColor,
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.minus_one_discover_missing),
+            color = contentColor.copy(alpha = 0.75f),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onOpenSettings) {
+            Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.minus_one_change))
         }
     }
 }
-
-/** The Google app, by package first and by its search action second. False when neither exists. */
-private fun openGoogle(context: android.content.Context): Boolean {
-    val pm = context.packageManager
-    val byPackage = runCatching { pm.getLaunchIntentForPackage(GOOGLE_SEARCH_PACKAGE) }.getOrNull()
-    val byAction = Intent(GOOGLE_SEARCH_ACTION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    val intent = byPackage ?: byAction.takeIf { it.resolveActivity(pm) != null }
-    if (intent == null) return false
-    return try {
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        true
-    } catch (_: Exception) {
-        false
-    }
-}
-
-private const val GOOGLE_SEARCH_PACKAGE = "com.google.android.googlequicksearchbox"
-private const val GOOGLE_SEARCH_ACTION = "com.google.android.gsf.search.action.GOOGLE_SEARCH"
 
 /**
  * The widget page: entries stacked down the screen, each carrying its own width and height.

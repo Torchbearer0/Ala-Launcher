@@ -98,6 +98,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
@@ -248,6 +249,9 @@ fun HomeScreen(
     onReorderHome: (newFavoriteKeys: List<String>, newWidgetPosition: Int) -> Unit,
     onCommitPadding: (PaddingSlot, Int) -> Unit,
     onFavoritesBoundsChanged: (topPx: Float, bottomPx: Float) -> Unit,
+    /** True when the page to the left of home has been given something to show. */
+    minusOneEnabled: Boolean,
+    onOpenMinusOne: () -> Unit,
     contentColor: Color,
     showFavoriteLabels: Boolean,
     alignment: HomeAlignment,
@@ -978,6 +982,19 @@ fun HomeScreen(
                                 onEditLayout = { onEditModeChange(true) },
                                 actions = widgetActions,
                                 homeIntentTick = homeIntentTick,
+                                // The page to the left opens from a swipe right across the widget
+                                // area, and only there. A favourite row needs its sideways swipe
+                                // for the app panel and the space under the favourites needs it
+                                // for picking a quick-launch slot, so the widget is the one part
+                                // of the home screen not already doing sideways work.
+                                //
+                                // Handled inside the widget's own touch layer rather than by a
+                                // handler around it: a hosted widget is an Android view handling
+                                // its own touch stream, and a pointerInput waiting behind it for
+                                // an unconsumed drag is never given one.
+                                onSwipeRight = {
+                                    if (minusOneEnabled) onOpenMinusOne()
+                                },
                                 modifier = Modifier
                                     .offset(x = widgetOffsetXDp.dp)
                                     .fillMaxWidth()

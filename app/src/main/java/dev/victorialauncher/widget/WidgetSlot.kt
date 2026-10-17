@@ -84,6 +84,8 @@ fun WidgetSlot(
     actions: WidgetSlotActions,
     /** Bumped when HOME is pressed on a home screen already showing, so the stack goes back. */
     homeIntentTick: Int,
+    /** Fired for a press on the widget that is dragged to the right. */
+    onSwipeRight: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -140,7 +142,11 @@ fun WidgetSlot(
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 val id = widgetIds[page]
-                HostedWidget(widgetId = id, onPressAndHold = { x, y -> openMenu(id, x, y) })
+                HostedWidget(
+                    widgetId = id,
+                    onPressAndHold = { x, y -> openMenu(id, x, y) },
+                    onSwipeRight = onSwipeRight,
+                )
             }
 
             if (widgetIds.size > 1) {
@@ -241,7 +247,11 @@ fun WidgetSlot(
  * [onPressAndHold] carries the press position in this widget's local pixels.
  */
 @Composable
-internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) -> Unit) {
+internal fun HostedWidget(
+    widgetId: Int,
+    onPressAndHold: (x: Float, y: Float) -> Unit,
+    onSwipeRight: () -> Unit = {},
+) {
     val context = LocalContext.current
     val app = context.applicationContext as VictoriaApp
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
@@ -297,6 +307,7 @@ internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) ->
             LongPressFrameLayout(ctx).apply {
                 hostView?.let { addView(it) }
                 onLongPress = { x, y -> onPressAndHold(x, y) }
+                this.onSwipeRight = onSwipeRight
             }
         },
         update = { container ->
@@ -326,6 +337,7 @@ internal fun HostedWidget(widgetId: Int, onPressAndHold: (x: Float, y: Float) ->
                 hostView.updateAppWidgetSize(options, wDp, hDp, wDp, hDp)
             }
             container.onLongPress = { x, y -> onPressAndHold(x, y) }
+            container.onSwipeRight = onSwipeRight
         },
     )
 }

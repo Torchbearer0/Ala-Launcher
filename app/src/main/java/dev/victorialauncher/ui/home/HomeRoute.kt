@@ -698,18 +698,16 @@ fun HomeRoute(
             )
         }
 
-        // The home screen and the page to its left, as one pager, so moving between them is a swipe
-        // anywhere rather than a swipe that has to land in one particular band of empty screen.
-        // The band approach assumed there was room between the widget and the first row; on a
-        // layout that fills the screen there is not, and the gesture quietly stopped working.
-        // A pager needs no such room.
+        // The page is an overlay again, not a pager page, and the swipe that opens it is confined to
+        // the widget area.
         //
-        // The page is index 0 and home index 1, so dragging right - the gesture that moves
-        // content towards the left - reveals the page. Rows inside the pager still answer to
-        // their own horizontal swipe first and consume it, so an app shortcut still swipes
-        // open instead of turning the screen into the page.
-        val pagerState = rememberPagerState(initialPage = 1) { 2 }
-        var minusOneResizing by remember { mutableStateOf(false) }
+        // The pager version broke two things that are worth more than the gesture is: swipe right
+        // on a favourite row stopped opening that app's panel, and the swipe below the favourites
+        // stopped picking the quick-launch slot. Both are the same axis, and a pager claims all of
+        // them. The page is a side destination, not a second home screen, so it does not need to
+        // be one — it needs one gesture in one place, and the widget area is the only part of the
+        // home screen that is not already doing sideways work.
+        var minusOneVisible by remember { mutableStateOf(false) }
 
         // Rounded up a little with the panel opening rather than snapping: the blur is what
         // makes the panel read as being in front of the home screen, and a value that jumps
@@ -731,37 +729,71 @@ fun HomeRoute(
             animationSpec = tween(OVERLAY_BLUR_MS),
             label = "overlayBlur",
         )
+
         /** Rewrites the page's stack, leaving its mode alone. */
         fun updateMinusOneEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
             scope.launch { app.prefs.setMinusOne(minusOne.mode, transform(minusOne.entries)) }
         }
-        LaunchedEffect(minusOne.mode) {
-            // Turning the page off while it is showing would leave a blank page that a swipe
-            // away from home, with nothing on it and no way to say why.
-            if (minusOne.mode == MinusOneMode.OFF && pagerState.currentPage == 0) {
-                pagerState.animateScrollToPage(1)
-            }
-        }
-        // Bumped by HOME so a press on the home page goes back to it from the left page.
-        LaunchedEffect(homeIntentTick) {
-            if (homeIntentTick > 0 && pagerState.currentPage != 1) {
-                pagerState.animateScrollToPage(1)
-            }
-        }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            // A resize handle is a sideways drag, which is exactly what a pager is for, so the
-            // pager would take every one of them and turn a width change into a page change.
-            // Consuming the down is not enough on its own — the pager's own slop detection wins
-            // the race for a drag that goes purely sideways — so the handles switch it off for
-            // as long as one is held. Nothing is lost: the gesture was never meant for the pager.
-            userScrollEnabled = !minusOneResizing,
-            beyondViewportPageCount = 1,
-        ) { page ->
-        when (page) {
-            0 -> MinusOnePage(
+        LaunchedEffect(minusOne.mode) {
+            // Turning the page off while it is showing would leave a blank page a swipe away
+            // from home, with nothing on it and no way to say why.
+            if (minusOne.mode == MinusOneMode.OFF) minusOneVisible = false
+        }
+        // HOME goes home, from wherever on the left page the user was.
+        LaunchedEffect(homeIntentTick) {
+            if (homeIntentTick > 0) minusOneVisible = false
+        }
+        // BACK leaves the page rather than the launcher, or the page is a place the only way out
+        // of is one specific gesture.
+        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
+
+        // Kept composed and measured while hidden, just never placed. Not placing it means it
+        // neither draws nor receives touches.
+        val minusOneAlpha by animateFloatAsState(
+            targetValue = if (minusOneVisible) 1f else 0f,
+            animationSpec = tween(240, easing = FastOutSlowInEasing),
+            label = "minusOneAlpha",
+        )
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = minusOneAlpha
+                    // A layer rather than an offset modifier, because a layer can see its own
+                    // size and this one's is only known after layout - which is exactly what an
+                    // unplaced overlay measures as zero.
+                    translationX = -(1f - minusOneAlpha) * size.width
+                }
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    if (minusOneVisible) {
+                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                    } else {
+                        layout(0, 0) {}
+                    }
+                }
+                // A decisive drag either way closes it. Nothing on the page answers to a sideways
+                // drag - its content is one vertical stack - and dragging back the way you came
+                // is a drag to the left on a page that sits to the left, which counting only
+                // rightward travel would have ignored.
+                .pointerInput(Unit) {
+                    if (!minusOneVisible) return@pointerInput
+                    val threshold = with(density) { 72.dp.toPx() }
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var travelled = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            travelled = change.position.x - down.position.x
+                        }
+                        if (kotlin.math.abs(travelled) > threshold) minusOneVisible = false
+                    }
+                },
+        ) {
+            MinusOnePage(
                 page = minusOne,
                 appsByKey = appsByKey,
                 contentColor = settings.contentColor,
@@ -783,10 +815,10 @@ fun HomeRoute(
                 onAppInfo = { id -> widgetActions.onAppInfo(id) },
                 onLaunch = { launchEntry(it) },
                 onOpenSettings = { onNavigate("settings") },
-                onResizeActiveChange = { minusOneResizing = it },
             )
+        }
 
-            else -> Box(
+        Box(
             modifier = Modifier
                 .graphicsLayer { alpha = homeAlpha }
                 // Blurred when something is drawn over it, so the panel sits on a softened
@@ -884,17 +916,7 @@ fun HomeRoute(
                 cornerLongPressAction = longPressAction,
                 cornerSwipeUpAction = swipeUpAction,
                 favoritesReorderable = settings.favoritesSource == FavoritesSource.MANUAL,
-                // The page's swipe and a row's shortcut swipe are the same axis, and they were
-                // fighting over it: the row consumed the drag, so on a home screen filled with
-                // favourites — which is most of them — swipe right reached the page only where
-                // there happened to be nothing. The page is the whole point of the gesture now,
-                // so a rightward row swipe goes to the page and the shortcut moves to the other
-                // direction rather than being lost. Left stays left either way.
-                shortcutSwipe = if (minusOne.mode != MinusOneMode.OFF && settings.shortcutSwipe == ShortcutSwipe.RIGHT) {
-                    ShortcutSwipe.LEFT
-                } else {
-                    settings.shortcutSwipe
-                },
+                shortcutSwipe = settings.shortcutSwipe,
                 favorites = favorites,
                 notificationPreviewByPackage = remember(notifications) {
                     newestPreviewsByPackage(notifications)
@@ -979,6 +1001,16 @@ fun HomeRoute(
                 },
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
+                minusOneEnabled = minusOne.mode != MinusOneMode.OFF,
+                onOpenMinusOne = {
+                    minusOneVisible = true
+                    // Discover has nothing to draw here - it is the Google app, not a feed of
+                    // ours - so reaching the page is the whole gesture and the app opens with
+                    // it. Asking for a button first made the page a dead end with a prompt.
+                    if (minusOne.mode == MinusOneMode.DISCOVER) {
+                        openGoogleApp(context)
+                    }
+                },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -1066,56 +1098,6 @@ fun HomeRoute(
                 onUnpinShortcut = { app.appRepository.unpin(it) },
                 onOpenSettings = { onNavigate("settings") },
             )
-        }
-        }
-        }
-
-        // Back from the left page goes home rather than leaving the launcher, or the page would
-        // be somewhere the only way out of is one specific gesture.
-        BackHandler(enabled = pagerState.currentPage == 0) {
-            scope.launch { pagerState.animateScrollToPage(1) }
-        }
-
-        // Two dots along the bottom, because nothing on the home screen otherwise says there is
-        // another page. A gesture nobody can see is a gesture nobody finds, and the cost of
-        // these is two dots that fade out a moment after the swipe settles rather than sitting
-        // permanently over the wallpaper.
-        if (minusOne.mode != MinusOneMode.OFF && !appListVisible) {
-            var dotsVisible by remember { mutableStateOf(false) }
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.isScrollInProgress || pagerState.currentPageOffsetFraction != 0f }
-                    .collect { scrolling ->
-                        if (scrolling) dotsVisible = true
-                    }
-                // Linger briefly after a swipe settles, so the dots are still there to be seen
-                // by anyone who was not looking at the moment of the movement.
-                delay(900)
-                dotsVisible = false
-            }
-            val dotsAlpha by animateFloatAsState(
-                targetValue = if (dotsVisible) 1f else 0f,
-                animationSpec = tween(200),
-                label = "homePageDots",
-            )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 8.dp)
-                    .graphicsLayer { alpha = dotsAlpha },
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                repeat(2) { index ->
-                    Box(
-                        modifier = Modifier
-                            .size(if (index == pagerState.currentPage) 8.dp else 6.dp)
-                            .background(
-                                settings.contentColor.copy(alpha = if (index == pagerState.currentPage) 0.9f else 0.4f),
-                                CircleShape,
-                            ),
-                    )
-                }
-            }
         }
 
         // Kept composed and measured even while hidden, just never placed. Not placing it
@@ -1445,11 +1427,34 @@ fun HomeRoute(
                 },
             )
         }
-        }
     }
+}
 }
 
 private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
+
+/**
+ * The Google app, by package first and by its search action second. False when neither exists.
+ *
+ * Lives here rather than on the page because the gesture that reaches the page is what opens
+ * Google: the page has no content of its own to draw, so reaching it and opening the app are one
+ * action rather than a prompt followed by a second one.
+ */
+private fun openGoogleApp(context: android.content.Context): Boolean {
+    val pm = context.packageManager
+    val byPackage = runCatching { pm.getLaunchIntentForPackage(GOOGLE_SEARCH_PACKAGE) }.getOrNull()
+    val byAction = Intent(GOOGLE_SEARCH_ACTION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val intent = byPackage ?: byAction.takeIf { it.resolveActivity(pm) != null } ?: return false
+    return try {
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private const val GOOGLE_SEARCH_PACKAGE = "com.google.android.googlequicksearchbox"
+private const val GOOGLE_SEARCH_ACTION = "com.google.android.gsf.search.action.GOOGLE_SEARCH"
 
 /** Display and behavior settings the home destination reads, grouped so they travel as one. */
 @Immutable

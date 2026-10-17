@@ -14,10 +14,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -120,37 +118,23 @@ fun Modifier.swipeForShortcuts(
     if (mode == ShortcutSwipe.OFF || !enabled) {
         this
     } else this.pointerInput(mode) {
-        // Written out rather than detectHorizontalDragGestures, for one reason: that consumes
-        // the change where it decides a horizontal drag has started, whichever way it is going.
-        // The page on the left is reached by dragging right across the home screen, and the
-        // pager it lives in would take a leftward drag as "go back". So the two need to be
-        // told apart by direction, and only the row that is going to act may consume anything.
-        //
-        // The row's own direction is therefore claimed at the Initial pass, which runs before
-        // the pager can judge the drag. A drag the other way is not consumed at all, and is
-        // left for the pager — which is the whole point of the two living side by side.
-        //
-        // Measured on absolute positions rather than positionChange(), because the down may
-        // already be consumed by something further up the tree and positionChange() reports
-        // zero for a consumed change.
-        val toRight = mode == ShortcutSwipe.RIGHT
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-            val startX = down.position.x
-            var fired = false
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Initial)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) break
-                val dx = change.position.x - startX
-                val myWay = if (toRight) dx > SWIPE_THRESHOLD_PX else dx < -SWIPE_THRESHOLD_PX
-                if (!fired && myWay) {
-                    fired = true
-                    // The rest of the drag belongs to this gesture too, so the pager does not
-                    // start scrolling halfway through and take the row with it.
-                    change.consume()
-                    onSwipe()
-                }
+        var travelled = 0f
+        var fired = false
+        detectHorizontalDragGestures(
+            onDragStart = { travelled = 0f; fired = false },
+            onDragEnd = { },
+            onDragCancel = { },
+        ) { change, amount ->
+            travelled += amount
+            val far = when (mode) {
+                ShortcutSwipe.RIGHT -> travelled > SWIPE_THRESHOLD_PX
+                ShortcutSwipe.LEFT -> travelled < -SWIPE_THRESHOLD_PX
+                ShortcutSwipe.OFF -> false
+            }
+            if (!fired && far) {
+                fired = true
+                change.consume()
+                onSwipe()
             }
         }
     }
