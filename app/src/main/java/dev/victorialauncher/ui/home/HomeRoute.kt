@@ -306,6 +306,12 @@ fun HomeRoute(
     // the page, and without this the page's own swipe-to-dismiss reads it as a sideways fling
     // and closes the page halfway through a resize.
     var minusOneArranging by remember { mutableStateOf(false) }
+
+    // Which entry on the page is being arranged, held here rather than inside the page so that
+    // BACK can be aimed at it. Left inside, the page's own BACK handler closed the page and the
+    // arrangement with it in one press, and since closing the page lands on the home screen,
+    // one BACK from arranging looked exactly like a BACK that did nothing.
+    var minusOneEditing by remember { mutableStateOf<Int?>(null) }
     val notificationListOnPull by app.prefs.notificationListOnPull.collectAsState(initial = false)
     val notifications by NotificationBus.notifications.collectAsState()
 
@@ -553,6 +559,14 @@ fun HomeRoute(
     }
     LaunchedEffect(homeIntentTick) {
         if (homeIntentTick > 0) closeAppList(snap = true)
+        // HOME has to leave the page too, or the home gesture on the page leaves the page
+        // showing - which on a launcher is the same screen it came from, so the gesture looks
+        // like it did nothing at all. Any arranging stops with it: the page is leaving.
+        if (homeIntentTick > 0 && minusOneVisible) {
+            minusOneArranging = false
+            minusOneEditing = null
+            minusOneVisible = false
+        }
     }
 
     // The gap left for the back gesture, per side. Followed from the system when automatic,
@@ -1218,6 +1232,10 @@ fun HomeRoute(
                         entries.toMutableList().apply { add(to, removeAt(from)) }
                     }
                 },
+                // Held by the route rather than by the page, so BACK can end an arrangement
+                // without also leaving the page. See where it is declared.
+                editingIndex = minusOneEditing,
+                onEditingChange = { minusOneEditing = it },
                 // Tells the page's own swipe-to-dismiss to stand down while a handle is held.
                 onResizeActiveChange = { minusOneArranging = it },
                 onWidgetSettings = { id -> widgetActions.onWidgetSettings(id) },
@@ -1231,6 +1249,14 @@ fun HomeRoute(
         // only way out of is a swipe in one exact direction, and BACK — which the user has just
         // been pressing to get out of everything else on this screen — would close the app.
         BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
+
+        // Registered after the one above, so while something is being arranged this is the BACK
+        // that runs: one press ends the arranging and leaves the page where it is. Only the
+        // arrangement ends, because a press that also left the page would be the same press
+        // doing two things, and on a launcher that reads as BACK being broken.
+        BackHandler(enabled = minusOneVisible && minusOneEditing != null) {
+            minusOneEditing = null
+        }
 
         // Above everything else, and last, so a pull that opens it cannot be mistaken for a
         // pull that opened the list underneath. Only drawn while open: keeping a full-screen

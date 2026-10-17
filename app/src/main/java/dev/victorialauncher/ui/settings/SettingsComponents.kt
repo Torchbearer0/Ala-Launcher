@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -29,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,6 +67,70 @@ internal object SettingsTone {
 
     /** The edge of a card, the only thing that draws it on black. */
     val edge = Color(0x1FFFFFFF)
+
+    /**
+     * The one colour anything on this screen is allowed to be bright with.
+     *
+     * Sailfish keeps a black screen and lets a handful of things shine on it, and what makes it
+     * work is that nothing else competes. A cold cyan rather than the app's own teal: it reads
+     * as light coming off the screen rather than as another material colour.
+     */
+    val accent = Color(0xFF6FE3F5)
+}
+
+/**
+ * An icon standing on its own light.
+ *
+ * The glow is a radial falloff rather than a blur. There is nothing here to hand a RenderEffect
+ * - it is drawn by the app, not by the window - and a blurred layer re-applied every frame is
+ * the wrong thing for a list that scrolls continuously. A gradient costs the same over black as
+ * over anything else, and at 30dp the two are not distinguishable.
+ *
+ * The halo is drawn larger than its slot on purpose. Held to the mark's own size it reads as a
+ * tinted tile, and a tinted tile is what the grey one this replaced looked like.
+ */
+@Composable
+internal fun GlowingMark(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    size: Dp = 34.dp,
+    glow: Color = SettingsTone.accent,
+) {
+    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(size)
+                .graphicsLayer { scaleX = 2.1f; scaleY = 2.1f }
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            glow.copy(alpha = 0.26f),
+                            glow.copy(alpha = 0.08f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    CircleShape,
+                ),
+        )
+        Box(
+            Modifier
+                .size(size * 0.68f)
+                .clip(RoundedCornerShape(size * 0.24f))
+                .background(
+                    Brush.linearGradient(
+                        listOf(glow.copy(alpha = 0.22f), glow.copy(alpha = 0.06f)),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = glow,
+                modifier = Modifier.size(size * 0.36f),
+            )
+        }
+    }
 }
 
 /** One section's card. */
@@ -75,7 +142,26 @@ internal fun SettingsSurface(content: @Composable ColumnScope.() -> Unit) {
         border = androidx.compose.foundation.BorderStroke(1.dp, SettingsTone.edge),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(content = content)
+        Column {
+            // Light caught along the top edge, which is what makes a flat card read as a raised
+            // one on a screen with nothing else to judge depth by. Fades out at both ends so it
+            // looks like the light is coming from above rather than like a border on one side.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                SettingsTone.edge,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Column(content = content)
+        }
     }
 }
 
@@ -85,7 +171,9 @@ internal fun SettingsSectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        // The one bright colour on the screen, spent on the heading rather than on the rows:
+        // it is what makes a wall of black cards read as a set of named places.
+        color = SettingsTone.accent.copy(alpha = 0.82f),
         fontWeight = FontWeight.SemiBold,
         letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
         modifier = Modifier.padding(start = 22.dp, bottom = 8.dp),

@@ -4,6 +4,7 @@ package dev.victorialauncher.ui.home
 import android.content.Intent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -35,6 +36,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Height
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -66,6 +70,8 @@ import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -73,6 +79,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -130,6 +137,33 @@ private const val MOVE_SLOP_PX = 12f
 /** How far a widget travels before it swaps places with its neighbour. */
 private const val MOVE_STEP_DP = 40
 
+/** The circle a handle is drawn in, and the arrow inside it. */
+private const val GRIP_SIZE_DP = 30
+private const val GRIP_ICON_DP = 17
+
+/**
+ * Where a held entry lands when the finger is at [rootY].
+ *
+ * The held entry is lifted out of the count first, so it is never one of the ones it is being
+ * carried past - counting itself would mean every drag moved two places instead of one.
+ *
+ * An entry whose position is not known yet sorts to the end rather than the start, so a drag
+ * that begins before the list has finished laying out cannot throw the entry to the top.
+ *
+ * Pure, and taking the centres as a function rather than a list, so the part of arranging
+ * that decides *where* something goes can be tested with no screen, no finger and no widget.
+ */
+internal fun dragTargetIndex(
+    heldIndex: Int,
+    centreY: (Int) -> Float?,
+    rootY: Float,
+    lastIndex: Int,
+): Int {
+    if (lastIndex < 1) return heldIndex
+    val above = (0..lastIndex).count { it != heldIndex && (centreY(it) ?: Float.MAX_VALUE) < rootY }
+    return above.coerceIn(0, lastIndex)
+}
+
 /** The add-widget control. Big enough to be a target without covering a widget. */
 private const val FAB_SIZE_DP = 60
 
@@ -157,6 +191,9 @@ fun MinusOnePage(
     onOpenSettings: () -> Unit,
     /** Reports that a resize handle is held, so the pager around this stops scrolling. */
     onResizeActiveChange: (Boolean) -> Unit = {},
+    /** Which entry is being arranged, and who changes it. Held by the route - see HomeRoute. */
+    editingIndex: Int? = null,
+    onEditingChange: (Int?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (page.mode) {
@@ -180,6 +217,8 @@ fun MinusOnePage(
             onLaunch = onLaunch,
             onOpenSettings = onOpenSettings,
             onResizeActiveChange = onResizeActiveChange,
+            editingIndex = editingIndex,
+            onEditingChange = onEditingChange,
             modifier = modifier,
         )
     }
@@ -255,6 +294,9 @@ private fun WidgetStackPage(
     onLaunch: (AppInfo) -> Unit,
     onOpenSettings: () -> Unit,
     onResizeActiveChange: (Boolean) -> Unit,
+    /** Which entry is being arranged, and who changes it. Held by the route - see HomeRoute. */
+    editingIndex: Int?,
+    onEditingChange: (Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var menuIndex by remember { mutableStateOf<Int?>(null) }
@@ -286,8 +328,8 @@ private fun WidgetStackPage(
     // a number the first time anyone drags it.
     val measuredWidthDp = remember { mutableStateMapOf<Int, Int>() }
 
-    // Which entry is being arranged, and which one is being dragged right now.
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    // Which entry is being dragged right now. The one being arranged is [editingIndex], which
+    // belongs to the route.
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var rowWidthDp by remember { mutableIntStateOf(0) }
 
@@ -302,28 +344,30 @@ private fun WidgetStackPage(
     // swap would shuffle the wrong one.
     var heldIndex by remember { mutableStateOf<Int?>(null) }
 
-    // The travel reported at the last swap. The drag reports the whole gesture so far, so
-    // subtracting this leaves the travel since the last decision - which is what makes one
-    // step cost one step instead of compounding on a finger that has stopped moving.
-    var lastMoveDy by remember { mutableFloatStateOf(0f) }
+    // Where each entry actually is on screen, in window coordinates. Recorded on layout rather
+    // than worked out from the list, because the list does not know how tall its entries are:
+    // a resized widget is a different height, and two entries share a row when one is narrow.
+    val entryTops = remember { mutableStateMapOf<Int, Float>() }
 
-    // One step per moveStepPx of travel, so the stack rearranges under the finger rather than
-    // only on release. Measured as travel rather than as a direction, because the drag that
-    // starts an arranging gesture is a touch slop by definition, and treating that slop as a
-    // deliberate move would reorder the stack every time anyone merely began to drag.
-    fun moveStep(dyPx: Float) {
+    /** The middle of an entry on screen, or null before it has been laid out. */
+    fun centreY(index: Int): Float? {
+        val top = entryTops[index] ?: return null
+        val entry = entries.getOrNull(index) ?: return null
+        return top + with(density) { entry.heightDp.dp.toPx() } / 2f
+    }
+
+    // The held entry follows the finger, and everything else gets out of its way.
+    fun moveTo(rootY: Float) {
         val from = heldIndex ?: return
-        val travelled = dyPx - lastMoveDy
-        if (abs(travelled) < moveStepPx) return
-        lastMoveDy = dyPx
-        val to = (if (travelled > 0f) from + 1 else from - 1).coerceIn(0, entries.lastIndex)
+        if (entries.size < 2) return
+        val to = dragTargetIndex(from, ::centreY, rootY, entries.lastIndex)
         if (to == from) return
         onMove(from, to)
         heldIndex = to
         draggingIndex = to
-        // Editing follows the entry rather than the slot. Left on the old index, the handles
+        // Arranging follows the entry rather than the slot. Left on the old index, the handles
         // and the cross would stay behind on whichever entry had been sitting there.
-        editingIndex = to
+        onEditingChange(to)
     }
 
     fun releaseMove() {
@@ -384,6 +428,9 @@ private fun WidgetStackPage(
                     .then(if (entry.widthDp > 0) Modifier.width(entry.widthDp.dp) else Modifier.fillMaxWidth())
                     .height(entry.heightDp.dp)
                     .onSizeChanged { measuredWidthDp[index] = with(density) { it.width.toDp().value.toInt() } }
+                    // Where this entry sits in the window, so a held entry can be arranged
+                    // against where the finger is rather than against how far it has moved.
+                    .onGloballyPositioned { entryTops[index] = it.positionInWindow().y }
                     // No border around a widget at any time. A frame says "this is a box in a
                     // layout"; the widgets are content, and the only thing that should outline
                     // one is the user holding it in edit mode.
@@ -411,16 +458,15 @@ private fun WidgetStackPage(
                     // no longer opens a menu - the menu used to be the only way to resize or
                     // remove, and both of those are now buttons on the entry, so a menu over
                     // the top of it would only hide the thing it was opened for.
-                    onPressAndHold = { _, _ -> editingIndex = index },
+                    onPressAndHold = { _, _ -> onEditingChange(index) },
                     // Dragging the middle moves it. Only while editing, because otherwise a drag
                     // on a widget belongs to the widget.
-                    onDragMove = if (editing) { { dy -> moveStep(dy) } } else null,
+                    onDragMove = if (editing) { { rootY -> moveTo(rootY) } } else null,
                     onDragEnd = if (editing) { { releaseMove() } } else null,
                     onDragStart = if (editing) {
                         {
                             heldIndex = index
                             draggingIndex = index
-                            lastMoveDy = 0f
                         }
                     } else null,
                 )
@@ -500,7 +546,7 @@ private fun WidgetStackPage(
                         EditButton(
                             label = stringResource(R.string.minus_one_remove),
                             onClick = {
-                                editingIndex = null
+                                onEditingChange(null)
                                 menuIndex = null
                                 onRemove(index)
                             },
@@ -534,7 +580,7 @@ private fun WidgetStackPage(
                             .clip(RoundedCornerShape(22.dp))
                             .background(Color.White.copy(alpha = 0.06f))
                             .clickable {
-                                editingIndex = null
+                                onEditingChange(null)
                                 onAddWidget()
                             },
                         contentAlignment = Alignment.Center,
@@ -836,40 +882,35 @@ private fun HandleStrip(
         // At zero until touched there was nothing on screen saying the edge could be dragged at
         // all, so the handles were a thing that had to be guessed at.
         val alpha by animateFloatAsState(
-            targetValue = if (active) 1f else 0.5f,
+            targetValue = if (active) 1f else 0.62f,
             label = "handleAlpha",
         )
-        val bar = contentColor.copy(alpha = 0.85f)
-        if (corner) {
-            // Two bars meeting at a corner, inset from the edges they mark. Reads as a bracket
-            // rather than a divider, so it is not mistaken for part of the widget underneath.
-            Column(
-                modifier = Modifier.size(thickness),
-                verticalArrangement = Arrangement.Bottom,
-                horizontalAlignment = Alignment.End,
-            ) {
-                Box(
-                    Modifier
-                        .width(thickness)
-                        .height(3.dp)
-                        .graphicsLayer { this.alpha = alpha }
-                        .background(bar, RoundedCornerShape(2.dp)),
-                )
-                Box(
-                    Modifier
-                        .width(3.dp)
-                        .height(thickness - 3.dp)
-                        .graphicsLayer { this.alpha = alpha }
-                        .background(bar, RoundedCornerShape(2.dp)),
-                )
-            }
-        } else {
-            Box(
+        // An arrow rather than a bar, because a bar is a divider and an arrow says which way
+        // the edge moves. Each one is drawn in a circle so it reads as a target rather than as
+        // something belonging to the widget underneath, and the arrow for the axis it resizes
+        // is the one pointing along it.
+        val arrow: ImageVector = when {
+            corner -> Icons.AutoMirrored.Filled.CompareArrows
+            vertical -> Icons.Filled.SwapVert
+            else -> Icons.Filled.SwapHoriz
+        }
+        Box(
+            modifier = Modifier
+                .size(GRIP_SIZE_DP.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = if (active) 0.55f else 0.34f))
+                .border(1.dp, contentColor.copy(alpha = 0.5f), CircleShape)
+                // The corner arrow lies along the diagonal, so it is drawn horizontal and turned.
+                .then(if (corner) Modifier.rotate(45f) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                arrow,
+                contentDescription = null,
+                tint = contentColor,
                 modifier = Modifier
-                    .then(if (vertical) Modifier.width(thickness) else Modifier.height(thickness))
-                    .then(if (vertical) Modifier.height(4.dp) else Modifier.width(4.dp))
-                    .graphicsLayer { this.alpha = alpha }
-                    .background(bar, CircleShape),
+                    .size(GRIP_ICON_DP.dp)
+                    .graphicsLayer { this.alpha = alpha },
             )
         }
     }

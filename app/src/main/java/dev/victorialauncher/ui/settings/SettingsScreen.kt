@@ -12,6 +12,9 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -953,8 +956,29 @@ fun SettingsScreen(
     // comes back only while the dim setting is being previewed, because that is the one moment
     // its absence would be describing the thing being changed rather than the screen.
     val pageBackground = lerp(Color.Black, surface, dimPreviewReveal)
+    val density = LocalDensity.current
 
     Box(Modifier.fillMaxSize()) {
+    // The page colour, painted here rather than by the Scaffold so the light below sits on it.
+    Box(Modifier.fillMaxSize().background(pageBackground))
+    // One soft light above the list, so pure black is not dead flat. Sailfish does this with the
+    // whole screen; on AMOLED it is the difference between a black rectangle and something lit.
+    // Alpha is tiny on purpose - enough to see if you look for it, not enough to lift the
+    // pixels off their power saving. Where the marks sit, so it lights what it is behind.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        SettingsTone.accent.copy(alpha = 0.085f),
+                        Color.Transparent,
+                    ),
+                    radius = with(density) { 560.dp.toPx() },
+                    center = Offset(with(density) { 40.dp.toPx() }, with(density) { 140.dp.toPx() }),
+                ),
+            ),
+    )
     if (dimPreviewReveal > 0f) {
         Box(
             Modifier
@@ -963,7 +987,10 @@ fun SettingsScreen(
         )
     }
     Scaffold(
-        containerColor = pageBackground,
+        // Transparent, so the light behind it shows through. The page colour is painted by the
+        // box this sits in rather than by the Scaffold - an opaque container here would cover
+        // the light again, which is exactly what it did when this was the other way round.
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -985,7 +1012,6 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier
                 .padding(padding)
-                .background(pageBackground)
                 .fillMaxWidth(),
         ) {
             item {
@@ -1015,30 +1041,13 @@ fun SettingsScreen(
                     SettingsSurface {
                         SettingsSection.entries.forEachIndexed { index, section ->
                             if (index > 0) RowDivider()
-                            // A mark at the left of each one. A list of eight words and a
-                            // chevron is a directory with nothing to look at; the mark is what
-                            // makes each line findable before it has been read.
+                            // A mark at the left of each one, standing on its own light. A list
+                            // of eight words and a chevron is a directory with nothing to look
+                            // at; the mark is what makes each line findable before it is read.
                             SettingsRow(
                                 title = stringResource(section.labelRes),
                                 onClick = { openSection = section },
-                                leading = {
-                                    Box(
-                                        Modifier
-                                            .size(34.dp)
-                                            .clip(RoundedCornerShape(11.dp))
-                                            .background(
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            section.icon,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(19.dp),
-                                        )
-                                    }
-                                },
+                                leading = { GlowingMark(icon = section.icon) },
                                 trailing = {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowForwardIos,

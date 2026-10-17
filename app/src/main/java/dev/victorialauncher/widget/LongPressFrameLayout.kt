@@ -34,12 +34,15 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
     /**
      * Set only while the page is arranging this widget, so a drag moves it rather than the
      * widget. Null the rest of the time, and the widget's own scrolling is left alone.
+     *
+     * [dragMove] is given the finger's position in the window, not a delta - see handleDrag.
      */
     var dragStart: (() -> Unit)? = null
-    var dragMove: ((dy: Float) -> Unit)? = null
+    var dragMove: ((rootY: Float) -> Unit)? = null
     var dragEnd: (() -> Unit)? = null
 
     private var moving = false
+    private var locationInWindow = IntArray(2)
 
     private var longPressFired = false
 
@@ -172,9 +175,11 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
      * Reports an arranging drag, in whichever pass this event was delivered. True once the drag
      * is ours, which is the signal to intercept.
      *
-     * Reports the travel of the whole gesture rather than the step since the last event, so the
-     * page sees one number it can compare against a threshold instead of a run of tiny deltas
-     * it would have to accumulate itself.
+     * Reports where the finger is in window coordinates, not how far it has travelled. The page
+     * arranges against where the finger actually is: with a travel delta it can only ever step
+     * over a neighbour on some fixed count, which feels like a shuffle rather than a lift. An
+     * absolute position can be compared against the other entries' own positions, so they move
+     * out of the way continuously as the finger passes them.
      */
     private fun handleDrag(ev: MotionEvent): Boolean {
         if (dragMove == null) return false
@@ -182,10 +187,14 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
         if (!moving) {
             if (abs(total) <= MOVE_SLOP_PX) return false
             moving = true
+            // Where this view sits in the window, read once. A view-tree walk is not a
+            // per-event cost, and the finger's position within it plus this is where it is
+            // on screen - which is what has to be compared against the other entries.
+            locationInWindow = IntArray(2).also { getLocationInWindow(it) }
             dragStart?.invoke()
             parent?.requestDisallowInterceptTouchEvent(true)
         }
-        dragMove?.invoke(total)
+        dragMove?.invoke(locationInWindow[1] + ev.y)
         return true
     }
 }
