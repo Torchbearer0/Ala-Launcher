@@ -20,6 +20,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -128,12 +130,12 @@ import dev.victorialauncher.data.HomeAlignment
 import dev.victorialauncher.data.IconSide
 import dev.victorialauncher.data.ShortcutSwipe
 import dev.victorialauncher.ui.common.AppIcon
-import dev.victorialauncher.ui.common.AppShortcutMenu
 import dev.victorialauncher.ui.common.swipeForShortcuts
 import dev.victorialauncher.ui.common.LocalIconConfig
 import dev.victorialauncher.ui.common.recordTouchPosition
 import dev.victorialauncher.ui.common.EditAppDialog
 import dev.victorialauncher.ui.common.NotificationPreviewLine
+import dev.victorialauncher.ui.common.TouchAnchoredMenu
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.dropWhile
@@ -229,6 +231,12 @@ fun AppListScreen(
     /** Opens a folder row, where the list shows folders at all. */
     onOpenFolder: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    /**
+     * Opens an app's panel under the row that was swiped, the same second look the home
+     * screen offers. Handed up rather than drawn here: the panel is full-screen and belongs
+     * above this overlay, which the destination draws last.
+     */
+    onOpenPanel: (AppInfo, Dp, Dp) -> Unit,
     onDismiss: () -> Unit,
     contentColor: Color,
     /** Latest notification per posting package, for the preview line under each row. */
@@ -1291,7 +1299,7 @@ fun AppListScreen(
                         iconSide = iconSide,
                         app = row.app,
                         label = displayName(row.app),
-notification = notificationPreviewByPackage[row.app.componentName.packageName],
+                        notification = notificationPreviewByPackage[row.app.componentName.packageName],
                         iconSizeDp = iconSizeDp,
                         labelSizeSp = labelSizeSp,
                         isFavorite = favoriteKeys.contains(row.app.key),
@@ -1308,6 +1316,7 @@ notification = notificationPreviewByPackage[row.app.componentName.packageName],
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },
                         isHidden = row.app.key in hiddenApps,
                         onMoveToFolder = { onMoveToFolder(row.app) },
+                        onOpenPanel = onOpenPanel,
                     )
                     // A folder offers only the one thing that can be done with it from here,
                     // which is open it. The menu belongs to the apps inside it, and reaching
@@ -1580,23 +1589,42 @@ private fun AppRow(
     onMoveToFolder: () -> Unit,
     /** Hidden apps only ever reach this list through a search. */
     isHidden: Boolean,
+    /**
+     * Opens the app panel under this row, exactly as a swipe on the home screen does.
+     *
+     * Measured in window space here for the same reason it is there: between the swipe and
+     * the panel being drawn the list can scroll, and a panel placed from the row's old
+     * position reads as coming out of nowhere.
+     */
+    onOpenPanel: (AppInfo, Dp, Dp) -> Unit,
 ) {
     // Same press treatment as the home screen: the stock ripple all but vanishes against a
     // wallpaper, and without any feedback a tap that did register reads as one that didn't.
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val density = LocalDensity.current
-    var shortcutMenu by remember { mutableStateOf(false) }
+    // Kept here rather than read from the screen when the panel opens, for the same reason
+    // the home screen keeps its own: the list moves between the swipe and the panel being
+    // drawn, and a panel placed from where the row used to be is a panel from nowhere.
+    var rowBottomPx by remember { mutableStateOf(0f) }
+    var rowLeftPx by remember { mutableStateOf(0f) }
 
     Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned {
+                    val bounds = it.boundsInWindow()
+                    rowBottomPx = bounds.bottom.toFloat()
+                    rowLeftPx = bounds.left.toFloat()
+                }
                 // Ahead of the inset, so the long-press menu is still placed against the
                 // whole row rather than 20dp to the left of the finger.
                 .recordTouchPosition(touchPosition)
+                // The panel, not the shortcut popup: it is the same second look on both
+                // screens, so a row means the same thing wherever the row is.
                 .swipeForShortcuts(shortcutSwipe, app.kind == EntryKind.APP) {
-                    shortcutMenu = true
+                    onOpenPanel(app, with(density) { rowBottomPx.toDp() }, with(density) { rowLeftPx.toDp() })
                 }
                 .padding(horizontal = 20.dp)
                 .background(
@@ -1679,9 +1707,10 @@ private fun AppRow(
             }
         }
 
-        AppShortcutMenu(app, shortcutMenu, labelSizeSp) { shortcutMenu = false }
-
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu, offset = menuOffset) {
+        // Anchored at the finger and drawn in the launcher's own glass, because this is the
+        // same menu the home screen shows for the same app. A plain DropdownMenu here put the
+        // drawer on a different product from the home screen for no reason anyone asked for.
+        TouchAnchoredMenu(expanded = menuExpanded, offset = menuOffset, onDismissRequest = onDismissMenu) {
             // Not offered while the favorites keep themselves. Starring an app wrote to a list
             // nothing was drawing, so the app never appeared and there was nothing on screen to
             // say why — which is what #77 reported as favorites being broken.

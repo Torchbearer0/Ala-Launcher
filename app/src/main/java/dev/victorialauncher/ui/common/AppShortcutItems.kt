@@ -120,7 +120,7 @@ fun Modifier.swipeForShortcuts(
         var travelled = 0f
         var fired = false
         detectHorizontalDragGestures(
-            onDragStart = { travelled = 0f; fired = false; android.util.Log.w("VictoriaPanel", "dragStart") },
+            onDragStart = { travelled = 0f; fired = false },
             onDragEnd = { },
             onDragCancel = { },
         ) { change, amount ->

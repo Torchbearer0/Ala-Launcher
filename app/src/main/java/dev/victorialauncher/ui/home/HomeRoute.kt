@@ -406,6 +406,9 @@ fun HomeRoute(
         launchClose = null
         snapHome = snap
         appListVisible = false
+        // A panel opened from a drawer row belongs to that drawer. Leaving it up once the
+        // drawer is gone is a panel over the home screen explaining a row that is not there.
+        panelFor = null
         scrub.cancel()
     }
 
@@ -972,9 +975,20 @@ fun HomeRoute(
         // Kept composed and measured even while hidden, just never placed. Not placing it
         // means it neither draws nor receives touches.
         val overlayAlpha = if (appListVisible) 1f else 0f
+        // A panel can be opened from a row in here, and until this existed the blur behind
+        // it was applied to the home screen only - which is under the drawer. The panel was
+        // therefore drawn over a sharp, unblurred list and its near-clear fill had nothing
+        // behind it to read against. Same treatment, applied to whichever layer the panel
+        // actually has in front of it.
+        val drawerBlur by animateDpAsState(
+            targetValue = if (panelFor != null) 10.dp else 0.dp,
+            animationSpec = tween(OVERLAY_BLUR_MS),
+            label = "drawerBlur",
+        )
         Box(
             modifier = Modifier
                 .graphicsLayer { alpha = overlayAlpha }
+                .blur(drawerBlur)
                 .layout { measurable, constraints ->
                     val placeable = measurable.measure(constraints)
                     if (appListVisible) {
@@ -1036,6 +1050,10 @@ fun HomeRoute(
                 onMoveToFolder = { appInfo -> closeAppList(); folderPickerFor = appInfo },
                 onOpenFolder = { id -> closeAppList(); onNavigate("folder/" + id) },
                 onOpenSettings = { closeAppList(); onNavigate("settings") },
+                // The same panel the home screen opens, from the same gesture on a row. The
+                // drawer is an overlay the destination owns, so it cannot draw a full-screen
+                // panel over itself and reports the row it was opened from instead.
+                onOpenPanel = { app, top, left -> panelFor = Triple(app, top, left) },
                 onDismiss = { closeAppList() },
                 contentColor = settings.contentColor,
                 notificationPreviewByPackage = remember(notifications) {
