@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.victorialauncher.ui.theme
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -51,7 +57,10 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * One accent, and the light it throws.
@@ -63,10 +72,15 @@ import kotlin.math.roundToInt
  * deliberate, and is the thing that makes a launcher feel like it was designed rather than
  * assembled from stock parts.
  *
- * Cold cyan rather than this app's own teal, because it reads as light coming off the screen
- * rather than as another material colour.
+ * **White, not cyan.** On an AMOLED panel the pixels are off when they are black, so white is the
+ * only colour that reads as the screen switched on rather than as paint applied to it. A cyan
+ * accent looks lit on an LCD and merely bright on an OLED; white looks lit on both, and it is the
+ * only thing here that does not tint the black it sits on.
+ *
+ * Dull and dim when something is off, bright and blooming when it is on. There is no third state
+ * where a control is coloured but not glowing.
  */
-val GlowAccent = Color(0xFF6FE3F5)
+val GlowAccent = Color(0xFFFFFFFF)
 
 /** A band barely off black, so a control has something to be lit against. */
 val GlowTrack = Color(0x1FFFFFFF)
@@ -119,100 +133,153 @@ private fun Lit(size: Dp, scale: Float, alpha: Float, content: @Composable () ->
 /** What an unticked control is drawn in: grey, and not one of the accent's. */
 private val OffInk = Color(0xFF6E7276)
 
-/** A tick is a square with its corners turned, rather than hard corners. */
-private val RoundedTickShape = RoundedCornerShape(5.dp)
+/** How dark an unlit orb is. Dim, but not invisible - it has to be findable. */
+private val OrbOffFill = Color(0xFF23262A)
 
-private val SWITCH_SIZE = 26.dp
-
-/**
- * A round target: grey and dead when it is off, the accent and lit when it is on.
- *
- * Not a track with a travelling dot. The dot was the problem - a pill with a dot is still a pill,
- * and on a settings screen full of them the row reads as a row of lozenges rather than as a set
- * of decisions. What is wanted here is a target: one round thing that is either lit or not.
- *
- * So there is no track and no thumb, only the circle. Off it is grey and flat, with a faint
- * lighter rim so it still reads as something you can press rather than as a smudge; on it is the
- * accent with a halo. The change is a colour and a light, not a movement, which also means there
- * is nothing to animate and nothing to lag behind a finger.
- */
-@Composable
-fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Box(contentAlignment = Alignment.Center) {
-        GlowHalo(size = 58.dp, scale = 1.6f, alpha = if (checked) 0.42f else 0f)
-        Box(
-            Modifier
-                .size(SWITCH_SIZE)
-                .clip(CircleShape)
-                .background(if (checked) GlowAccent else Color(0xFF2A2E33))
-                .border(
-                    width = 1.5.dp,
-                    color = if (checked) Color.Transparent else OffInk.copy(alpha = 0.75f),
-                    shape = CircleShape,
-                )
-                .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
-        )
-    }
-}
+private val ORB_SIZE = 24.dp
 
 /**
- * A tick that shines when it is ticked, and is a quiet grey outline when it is not.
+ * A point of light: dim and small when it is off, bright and blooming when it is on.
  *
- * A checkbox is already a square, so rounding it is a smaller change than for a switch - but it
- * was square with hard corners, which reads as a placeholder rather than a control, and turning
- * them a little is what makes it look handled. The tick is drawn rather than borrowed for the same
- * reason as the switch, and so that the unchecked box is grey rather than faintly cyan.
+ * Not a track with a travelling dot. The Sailfish idea is that a switch is not a mechanism you
+ * operate but a lamp you turn on, and a lamp does not have a handle.
+ *
+ * The bloom is **dot matrix**, not a blur, and that is the whole look: rings of dots around the
+ * orb, thinning and fading outwards, so the glow is made of the same marks as everything else on
+ * the screen rather than being a soft wash laid over it.
+ *
+ * ## Why it cannot spill
+ *
+ * The dots are drawn inside a box that is clipped to itself. A halo that scales a gradient past
+ * its own bounds - which is what [GlowHalo] does, and what every version of this used to do -
+ * paints over whatever is next to it, and on a settings list of ticked rows that meant every
+ * row's light landing on the rows above and below it. Confining the drawing to its own box makes
+ * the spill impossible rather than merely smaller, so the row spacing no longer has to be
+ * negotiated against the glow.
+ *
+ * Off it is a small dark circle with the faintest suggestion of dots around it - an unlit LED.
+ * On it is a white orb with the matrix lit around it, growing as it lights.
  */
 @Composable
-fun GlowingCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Box(contentAlignment = Alignment.Center) {
-        GlowHalo(size = 52.dp, scale = 1.5f, alpha = if (checked) 0.26f else 0f)
-        Box(
-            Modifier
-                .size(CHECKBOX_SIZE)
-                .clip(RoundedTickShape)
-                .background(if (checked) GlowAccent else Color.Transparent)
-                .border(
-                    width = if (checked) 0.dp else 1.5.dp,
-                    color = if (checked) Color.Transparent else OffInk,
-                    shape = RoundedTickShape,
-                )
-                .toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (checked) {
-                Canvas(Modifier.size(CHECKBOX_SIZE * 0.62f)) {
-                    val w = this.size.width
-                    val h = this.size.height
-                    val stroke = Stroke(width = w * 0.18f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    // A tick, drawn as two strokes meeting low and left of centre.
-                    val path = Path().apply {
-                        moveTo(w * 0.14f, h * 0.52f)
-                        lineTo(w * 0.40f, h * 0.78f)
-                        lineTo(w * 0.86f, h * 0.22f)
-                    }
-                    drawPath(path, Color.Black, style = stroke)
+fun GlowOrb(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    /** How far the dot matrix reaches, as a fraction of the orb's own radius. */
+    bloom: Float = 2.6f,
+    onClick: (() -> Unit)? = null,
+    role: Role? = null,
+    onValueChange: ((Boolean) -> Unit)? = null,
+) {
+    val lit by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(220),
+        label = "orbLit",
+    )
+
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .then(
+                when {
+                    onValueChange != null && role != null ->
+                        Modifier.selectable(
+                            selected = active,
+                            role = role,
+                            onClick = { onValueChange(!active) },
+                        )
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    else -> Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            val dot = r * 0.17f
+
+            // The matrix first, so the orb sits on top of it rather than under it.
+            //
+            // Rings of dots, each further out, smaller and fainter than the last. The falloff is
+            // squared because a linear one reads as a flat disc with a hard edge; squared it
+            // reads as light, which spends most of its brightness close to the source.
+            val rings = 4
+            for (ring in 1..rings) {
+                val t = ring / (rings + 1f)
+                val ringR = r * (1f + bloom * t)
+                val alpha = (1f - t) * (1f - t) * lit * 0.85f
+                if (alpha < 0.02f) continue
+                val count = 6 + ring * 4
+                val d = dot * (1f - 0.5f * t)
+                for (i in 0 until count) {
+                    val a = (i.toFloat() / count) * 2f * PI.toFloat()
+                    drawCircle(
+                        color = GlowAccent.copy(alpha = alpha),
+                        radius = d,
+                        center = Offset(c.x + ringR * cos(a), c.y + ringR * sin(a)),
+                    )
                 }
+            }
+
+            // The orb itself. Off it is a dark disc with a dim rim, so it reads as a lamp that is
+            // not working rather than as a hole in the row.
+            drawCircle(
+                color = if (lit > 0.5f) GlowAccent else OrbOffFill,
+                radius = r * (0.34f + 0.10f * lit),
+                center = c,
+            )
+            if (lit <= 0.5f) {
+                drawCircle(
+                    color = OffInk.copy(alpha = 0.7f),
+                    radius = r * 0.34f,
+                    center = c,
+                    style = Stroke(width = r * 0.10f),
+                )
+            }
+            // The hot centre, only once it is on.
+            if (lit > 0.02f) {
+                drawCircle(color = Color.White.copy(alpha = 0.9f * lit), radius = r * 0.18f * lit, center = c)
             }
         }
     }
 }
 
-private val CHECKBOX_SIZE = 24.dp
+/** A switch: one lamp. Grey and dark when off, a lit orb when on. */
+@Composable
+fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    GlowOrb(
+        active = checked,
+        modifier = Modifier.size(ORB_SIZE),
+        role = Role.Switch,
+        onValueChange = onCheckedChange,
+    )
+}
 
-/** A radio marker that shines when it is the chosen one, and a ring when it is not. */
+/**
+ * A checkbox, as the same lamp.
+ *
+ * A square box with a tick is a form to fill in; this is a decision, and it looks like one. The
+ * same orb everywhere means a ticked row in a list of apps is unmistakable at a glance without
+ * reading it - which is what the square-and-tick version was for, and it did that job less well.
+ */
+@Composable
+fun GlowingCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    GlowOrb(
+        active = checked,
+        modifier = Modifier.size(22.dp),
+        role = Role.Checkbox,
+        onValueChange = onCheckedChange,
+    )
+}
+
+/** A radio marker, as the same lamp. Selected is lit; the others stay dark. */
 @Composable
 fun GlowingRadioButton(selected: Boolean, onClick: () -> Unit) {
-    Lit(size = 48.dp, scale = 1.7f, alpha = if (selected) 0.28f else 0f) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = GlowAccent,
-                unselectedColor = GlowTrack,
-            ),
-        )
-    }
+    GlowOrb(
+        active = selected,
+        modifier = Modifier.size(22.dp),
+        onClick = onClick,
+    )
 }
 
 /**
@@ -306,42 +373,47 @@ fun GlowingSlider(
                 .background(if (enabled) GlowTrack else GlowTrack.copy(alpha = 0.4f), CircleShape),
         )
 
-        // The lit part, and the light it throws, clipped to exactly the filled width - so the glow
-        // stops where the colour stops instead of washing the whole slider.
+        // The lit part of the line. No halo on it: at two dp a glow around the line reads as a
+        // second, fatter line rather than as light, and the handle is where the brightness
+        // belongs now.
         Box(
             Modifier
                 .fillMaxWidth(fraction)
                 .fillMaxHeight()
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            GlowHalo(size = SLIDER_TRACK_HEIGHT * 7f, scale = 1f, alpha = if (enabled) 0.55f else 0f)
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(if (enabled) GlowAccent else OffInk, CircleShape),
-            )
-        }
+                .clip(CircleShape)
+                .background(if (enabled) GlowAccent else OffInk, CircleShape),
+        )
 
-        // The ball, at one end or the other of the travel and nowhere in between.
+        // The handle: an orb, at one end of the travel or the other and nowhere in between.
         Box(
             Modifier
                 .offset { IntOffset((travel * fraction).roundToInt(), 0) }
-                .size(SLIDER_THUMB_SIZE),
+                .size(SLIDER_THUMB_SIZE)
+                .clipToBounds(),
             contentAlignment = Alignment.Center,
         ) {
-            GlowHalo(size = SLIDER_THUMB_SIZE, scale = 3.2f, alpha = if (enabled) 0.6f else 0f)
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(if (enabled) Color.White else OffInk, CircleShape),
-            )
+            // Always lit, even when the slider is disabled: a handle that goes dark reads as a
+            // slider that is broken rather than one that cannot be moved.
+            GlowOrb(active = true, bloom = 1.9f)
         }
     }
 }
 
-private val SLIDER_THUMB_SIZE = 18.dp
-private val SLIDER_TRACK_HEIGHT = 6.dp
+/**
+ * The handle is an orb, the same one every switch and tick is.
+ *
+ * Wider than the line it sits on, deliberately: the bloom needs room inside its own box to be
+ * clipped rather than painted over the rows beside it, and the dot matrix needs somewhere to be.
+ */
+private val SLIDER_THUMB_SIZE = 30.dp
+
+/**
+ * Two dp. It was six, and at six the filled half stopped reading as a line with a light on it and
+ * started reading as a bar being dragged along a channel. The handle carries the brightness now,
+ * so the track does not have to as well.
+ */
+private val SLIDER_TRACK_HEIGHT = 2.dp
+
 private val SLIDER_ROW_HEIGHT = 40.dp
 
 /** The same, for a range: both ends lit, and the band between them in the accent. */

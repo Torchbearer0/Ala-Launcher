@@ -202,12 +202,15 @@ private fun WelcomeFeatures(onDone: () -> Unit) {
  * The mark: a wave drawn in dots, arriving along itself.
  *
  * One progress value drives the lot, and each dot is lit by how far past it that value has come -
- * so the wave rolls in rather than the whole thing fading up at once, which is the difference
- * between a logo appearing and a logo arriving. Dots are also the icon, so the splash and the
- * launcher icon are the same shape rather than two drawings of it.
+ * so the wave forms rather than the whole thing fading up at once, which is the difference between
+ * a logo appearing and a logo arriving. The lit order is **bottom to top**, so the trough fills
+ * first and the crest rises out of it.
+ *
+ * Dots are also the icon, so the splash and the launcher icon are the same shape rather than two
+ * drawings of it.
  *
  * The dots grow as they arrive and carry a soft ring, because on a black screen a dot of flat
- * cyan is a dot and a lit one is light.
+ * white is a dot and a lit one is light.
  */
 @Composable
 private fun WaveMark(modifier: Modifier = Modifier) {
@@ -229,8 +232,14 @@ private fun WaveMark(modifier: Modifier = Modifier) {
             val x = step * i
             val y = centreY - amplitude * sin(along * 2f * PI.toFloat())
 
-            // Lit once the wave has swept past, and eased rather than switched.
-            val local = ((progress.value - along * 0.6f) / 0.4f).coerceIn(0f, 1f)
+            // Lit from the **bottom up**.
+            //
+            // Left to right, a wave arriving reads as a line being drawn. Bottom to top it reads
+            // as water: the trough fills first and the crest comes up out of it, which is the
+            // direction a wave actually forms. So the threshold runs on height, not on distance
+            // along the curve - the lowest dot is lit at once and the highest is last.
+            val heightFrac = if (size.height > 0f) y / size.height else 0f
+            val local = ((progress.value - (1f - heightFrac) * 0.62f) / 0.38f).coerceIn(0f, 1f)
             if (local <= 0f) continue
 
             // Tapers toward the right, the way the icon does.
