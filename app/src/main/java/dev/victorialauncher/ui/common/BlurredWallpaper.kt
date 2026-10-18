@@ -11,6 +11,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
 import android.util.Log
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -110,26 +112,31 @@ fun BlurredWallpaper(
     }
 
     // (2) The wallpaper, blurred by us.
+    //
+    // The theme sets `windowShowWallpaper=true` with a transparent window background, so the
+    // wallpaper is installed as **this window's own background drawable**. That makes it ours to
+    // draw with - no `WallpaperManager`, and so no `READ_MEDIA_IMAGES`, which is denied to this
+    // package on Android 13+ and which a launcher has no business holding anyway.
     val wallpaper by produceState<ImageBitmap?>(initialValue = null, context) {
         value = withContext(Dispatchers.IO) {
-            val wm = WallpaperManager.getInstance(context)
-            val drawable = try {
-                wm.fastDrawable
-            } catch (t: Throwable) {
-                Log.i(TAG, "fastDrawable failed: ${t.javaClass.simpleName}: ${t.message}")
-                null
-            } ?: try {
-                wm.drawable
-            } catch (t: Throwable) {
-                Log.i(TAG, "drawable failed: ${t.javaClass.simpleName}: ${t.message}")
-                null
-            }
-            if (drawable == null) {
-                Log.i(TAG, "no wallpaper drawable available")
+            val decor = context.findActivity()?.window?.decorView
+            val bg = decor?.background
+            Log.i(TAG, "decor background = " + (bg?.javaClass?.name ?: "null"))
+            if (bg == null || decor == null) {
                 null
             } else {
-                Log.i(TAG, "wallpaper ${drawable.intrinsicWidth}x${drawable.intrinsicHeight}")
-                runCatching { drawable.toBitmap().asImageBitmap() }.getOrNull()
+                val w = decor.width.takeIf { it > 0 } ?: 1080
+                val h = decor.height.takeIf { it > 0 } ?: 2376
+                try {
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    bg.setBounds(0, 0, w, h)
+                    bg.draw(Canvas(bmp))
+                    Log.i(TAG, "drew window background into ${w}x$h")
+                    bmp.asImageBitmap()
+                } catch (t: Throwable) {
+                    Log.i(TAG, "background draw failed: ${t.javaClass.simpleName}: ${t.message}")
+                    null
+                }
             }
         }
     }
