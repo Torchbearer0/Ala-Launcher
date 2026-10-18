@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -22,12 +24,12 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,11 +38,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 /**
  * One accent, and the light it throws.
@@ -105,65 +116,42 @@ private fun Lit(size: Dp, scale: Float, alpha: Float, content: @Composable () ->
     }
 }
 
-/**
- * How square the rounded controls are.
- *
- * Material's own switch is a pill: the track's radius is half its height, so the ends are
- * semicircles and the thing reads as a lozenge. Rounded here means a rectangle whose corners are
- * turned but still visibly corners - close enough to a squircle that it looks deliberate, far
- * enough from a pill that it stops reading as one. Seven dp on a track twenty-four tall is about a
- * third of the height, which is where the shape turns from a lozenge into a rounded rectangle.
- */
-private val RoundedTrackShape = RoundedCornerShape(7.dp)
-
-/** The same idea for the tick, which was square with its corners turned rather than round. */
-private val RoundedTickShape = RoundedCornerShape(5.dp)
-
 /** What an unticked control is drawn in: grey, and not one of the accent's. */
 private val OffInk = Color(0xFF6E7276)
 
-private val SWITCH_TRACK_W = 46.dp
-private val SWITCH_TRACK_H = 24.dp
-private val SWITCH_THUMB = 18.dp
-private val SWITCH_INSET = 3.dp
+/** A tick is a square with its corners turned, rather than hard corners. */
+private val RoundedTickShape = RoundedCornerShape(5.dp)
+
+private val SWITCH_SIZE = 26.dp
 
 /**
- * A switch that is lit rather than coloured, and rounded rather than a pill.
+ * A round target: grey and dead when it is off, the accent and lit when it is on.
  *
- * Drawn rather than taken from Material: Material3 1.3 took the shape parameters off `Switch` and
- * left the pill as the only option, so there is nothing to round without replacing it. Building
- * it out of a box and a circle is less code than working around that, and it means the off state
- * can be exactly what it should be - grey, with no glow and none of the accent anywhere in it.
- * Everything that is on is lit; nothing that is off is lit at all.
+ * Not a track with a travelling dot. The dot was the problem - a pill with a dot is still a pill,
+ * and on a settings screen full of them the row reads as a row of lozenges rather than as a set
+ * of decisions. What is wanted here is a target: one round thing that is either lit or not.
+ *
+ * So there is no track and no thumb, only the circle. Off it is grey and flat, with a faint
+ * lighter rim so it still reads as something you can press rather than as a smudge; on it is the
+ * accent with a halo. The change is a colour and a light, not a movement, which also means there
+ * is nothing to animate and nothing to lag behind a finger.
  */
 @Composable
 fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    val travel = SWITCH_TRACK_W - SWITCH_THUMB - SWITCH_INSET * 2
-    val offset by animateDpAsState(
-        targetValue = if (checked) travel + SWITCH_INSET else SWITCH_INSET,
-        animationSpec = tween(170),
-        label = "switchThumb",
-    )
-
     Box(contentAlignment = Alignment.Center) {
-        GlowHalo(size = 64.dp, scale = 1.45f, alpha = if (checked) 0.34f else 0f)
+        GlowHalo(size = 58.dp, scale = 1.6f, alpha = if (checked) 0.42f else 0f)
         Box(
             Modifier
-                .size(SWITCH_TRACK_W, SWITCH_TRACK_H)
-                .clip(RoundedTrackShape)
-                .background(if (checked) GlowAccent else GlowTrack)
-                .border(1.dp, if (checked) Color.Transparent else OffInk, RoundedTrackShape)
+                .size(SWITCH_SIZE)
+                .clip(CircleShape)
+                .background(if (checked) GlowAccent else Color(0xFF2A2E33))
+                .border(
+                    width = 1.5.dp,
+                    color = if (checked) Color.Transparent else OffInk.copy(alpha = 0.75f),
+                    shape = CircleShape,
+                )
                 .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
-        ) {
-            Box(
-                Modifier
-                    .offset(x = offset)
-                    .align(Alignment.CenterStart)
-                    .size(SWITCH_THUMB)
-                    .clip(CircleShape)
-                    .background(if (checked) Color.White else OffInk),
-            )
-        }
+        )
     }
 }
 
@@ -230,11 +218,17 @@ fun GlowingRadioButton(selected: Boolean, onClick: () -> Unit) {
 /**
  * A slider with a lit track and a handle that glows.
  *
- * Two things changed from the plain line. The active track carries its own halo, because a flat
- * band of colour on a black screen is a line and not light - the halo is what makes it read as lit,
- * and it is drawn under the track rather than around it so it never widens the bar it is lighting.
- * And the handle is a ball: a bar with a line running out of both sides of it reads as a break in
- * the track, whereas a circle reads as something sitting on it, which is what a handle is.
+ * Written out rather than taken from Material, because it has to look like this and Material will
+ * not let it. Its own track and thumb slots are enough for the shape, but the handle stopped
+ * following the value altogether: the ball sat in the middle of the track whatever the setting was
+ * set to - dead centre at 0% - and no drag moved it, because the gesture was being read by a Slider
+ * whose own width was not the width of the track beside it. Two components answering "how wide is
+ * this" differently is enough to stop a slider working, and there is no way to see that from the
+ * source when the whole thing is somebody else's layout.
+ *
+ * So the geometry is all here, and it is the same arithmetic on both sides: the handle travels
+ * from the middle of its own ball at the left end to the middle of its own ball at the right end,
+ * which is the only definition that lets 0% actually rest at the left.
  *
  * The ball is white rather than the accent, on purpose. On a black screen the accent is the colour
  * everything else is judged against, and an accented handle disappears into the track it is on.
@@ -248,75 +242,107 @@ fun GlowingSlider(
     onValueChangeFinished: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
+    val density = LocalDensity.current
     val span = valueRange.endInclusive - valueRange.start
     val fraction = if (span > 0f) ((value - valueRange.start) / span).coerceIn(0f, 1f) else 0f
 
-    Box(modifier) {
-        // The track is drawn here rather than left to Material, because the lit half needs its
-        // halo clipped to exactly the width of the colour - Material's track is drawn on top of
-        // whatever is behind it and gives nowhere to put one.
+    /** How wide this slider is, in pixels, once it has been laid out. */
+    var widthPx by remember { mutableIntStateOf(0) }
+    val thumbPx = with(density) { SLIDER_THUMB_SIZE.toPx() }
+    // The handle's centre travels, so the distance it covers is the width less one ball.
+    val travel = (widthPx - thumbPx).coerceAtLeast(0f)
+
+    /** A finger at this x, as a value in the range. */
+    fun valueAt(x: Float): Float {
+        val f = (x / widthPx).coerceIn(0f, 1f)
+        return valueRange.start + f * span
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            // Tall enough to be a comfortable target even though the line in it is 6dp.
+            .height(SLIDER_ROW_HEIGHT)
+            .onSizeChanged { widthPx = it.width }
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(value, valueRange)
+                if (enabled) {
+                    setProgress { target ->
+                        onValueChange(target.coerceIn(valueRange))
+                        true
+                    }
+                }
+            }
+            .pointerInput(enabled, widthPx, valueRange) {
+                if (!enabled || widthPx <= 0) return@pointerInput
+                awaitEachGesture {
+                    // Claim the press at once. Without this a drag is only noticed once it has
+                    // moved a whole touch slop, and the first part of the gesture goes to whatever
+                    // is behind - which on a settings screen is the row underneath.
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    onValueChange(valueAt(down.position.x))
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        change.consume()
+                        // Absolute position, never a delta: a consumed change reports no movement,
+                        // and a slider that reads deltas stops dead the moment it claims the drag.
+                        onValueChange(valueAt(change.position.x))
+                    }
+                    onValueChangeFinished?.invoke()
+                }
+            },
+        // CentreStart, so the track starts at the left edge and the handle is placed by offset
+        // rather than by an alignment that would fight it.
+        contentAlignment = Alignment.CenterStart,
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(SLIDER_TRACK_HEIGHT)
                 .clip(CircleShape)
-                .background(GlowTrack, CircleShape),
+                .background(if (enabled) GlowTrack else GlowTrack.copy(alpha = 0.4f), CircleShape),
+        )
+
+        // The lit part, and the light it throws, clipped to exactly the filled width - so the glow
+        // stops where the colour stops instead of washing the whole slider.
+        Box(
+            Modifier
+                .fillMaxWidth(fraction)
+                .fillMaxHeight()
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            // Clipped to the filled width, so the light stops where the colour stops instead of
-            // washing the whole slider and telling the eye the whole thing is lit.
+            GlowHalo(size = SLIDER_TRACK_HEIGHT * 7f, scale = 1f, alpha = if (enabled) 0.55f else 0f)
             Box(
                 Modifier
-                    .fillMaxWidth(fraction)
-                    .fillMaxHeight()
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                GlowHalo(size = SLIDER_TRACK_HEIGHT * 7f, scale = 1f, alpha = if (enabled) 0.55f else 0f)
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(GlowAccent, CircleShape),
-                )
-            }
+                    .fillMaxSize()
+                    .background(if (enabled) GlowAccent else OffInk, CircleShape),
+            )
         }
 
-        // Material's slider on top, with everything of its own made invisible: it is here for its
-        // drag handling, its accessibility and its range steps, not for its paint.
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            enabled = enabled,
-            onValueChangeFinished = onValueChangeFinished,
-            colors = SliderDefaults.colors(
-                thumbColor = Color.Transparent,
-                activeTrackColor = Color.Transparent,
-                inactiveTrackColor = Color.Transparent,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-                disabledActiveTrackColor = Color.Transparent,
-                disabledInactiveTrackColor = Color.Transparent,
-                disabledThumbColor = Color.Transparent,
-            ),
-            track = {},
-            thumb = {
-                // A halo the size of the ball, and the ball. The light is what the handle is made
-                // of rather than a ring drawn around something else.
-                Box(contentAlignment = Alignment.Center) {
-                    GlowHalo(size = SLIDER_THUMB_SIZE * 2.8f, scale = 1f, alpha = if (enabled) 0.65f else 0f)
-                    Box(
-                        Modifier
-                            .size(SLIDER_THUMB_SIZE)
-                            .background(if (enabled) Color.White else OffInk, CircleShape),
-                    )
-                }
-            },
-        )
+        // The ball, at one end or the other of the travel and nowhere in between.
+        Box(
+            Modifier
+                .offset { IntOffset((travel * fraction).roundToInt(), 0) }
+                .size(SLIDER_THUMB_SIZE),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlowHalo(size = SLIDER_THUMB_SIZE, scale = 3.2f, alpha = if (enabled) 0.6f else 0f)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(if (enabled) Color.White else OffInk, CircleShape),
+            )
+        }
     }
 }
 
 private val SLIDER_THUMB_SIZE = 18.dp
 private val SLIDER_TRACK_HEIGHT = 6.dp
+private val SLIDER_ROW_HEIGHT = 40.dp
 
 /** The same, for a range: both ends lit, and the band between them in the accent. */
 @Composable
