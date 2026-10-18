@@ -136,7 +136,7 @@ private val OffInk = Color(0xFF6E7276)
 /** How dark an unlit orb is. Dim, but not invisible - it has to be findable. */
 private val OrbOffFill = Color(0xFF23262A)
 
-private val ORB_SIZE = 24.dp
+private val ORB_SIZE = 34.dp
 
 /**
  * A point of light: dim and small when it is off, bright and blooming when it is on.
@@ -164,8 +164,12 @@ private val ORB_SIZE = 24.dp
 fun GlowOrb(
     active: Boolean,
     modifier: Modifier = Modifier,
-    /** How far the dot matrix reaches, as a fraction of the orb's own radius. */
-    bloom: Float = 2.6f,
+    /**
+     * How many rings of dots the halo has. Two reads as a lit lamp; one reads as a ball with a
+     * glow, which is what a slider handle wants - two rings around a small ball looks like a
+     * focus indicator rather than a light.
+     */
+    rings: Int = 2,
     onClick: (() -> Unit)? = null,
     role: Role? = null,
     onValueChange: ((Boolean) -> Unit)? = null,
@@ -195,50 +199,57 @@ fun GlowOrb(
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val c = Offset(size.width / 2f, size.height / 2f)
-            val r = size.minDimension / 2f
-            val dot = r * 0.17f
-
-            // The matrix first, so the orb sits on top of it rather than under it.
+            // Half of the control's own footprint. **Everything is measured against this**, so
+            // the orb and every ring of the matrix fit inside it.
             //
-            // Rings of dots, each further out, smaller and fainter than the last. The falloff is
-            // squared because a linear one reads as a flat disc with a hard edge; squared it
-            // reads as light, which spends most of its brightness close to the source.
-            val rings = 4
-            for (ring in 1..rings) {
-                val t = ring / (rings + 1f)
-                val ringR = r * (1f + bloom * t)
-                val alpha = (1f - t) * (1f - t) * lit * 0.85f
-                if (alpha < 0.02f) continue
-                val count = 6 + ring * 4
-                val d = dot * (1f - 0.5f * t)
+            // This is the whole of the spill fix. The last version took the orb as the box and
+            // then put the rings at three times its radius, so the clip that stopped the glow
+            // escaping also stopped all of it being drawn - there was no halo at all. Keeping the
+            // matrix inside the footprint means the clip never has to do anything.
+            val R = size.minDimension / 2f
+
+            val orbR = R * 0.40f
+
+            // The matrix, outermost ring first. Offsets are staggered by half a step between the
+            // rings so the dots do not line up into spokes - a matrix, not a spoke wheel.
+            val ringRadius = floatArrayOf(0.88f, 0.66f)
+            val ringDot = floatArrayOf(0.062f, 0.095f)
+            val ringCount = intArrayOf(12, 8)
+            val ringAlpha = floatArrayOf(0.42f, 0.72f)
+
+            val rings = minOf(rings, ringRadius.size)
+            for (ring in 0 until rings) {
+                // Dull but present when off - an unlit LED still has a matrix around it - and
+                // bright when on. Never absent, so the control is findable either way.
+                val alpha = (0.14f + 0.86f * lit) * ringAlpha[ring]
+                val offset = if (ring == 0) 0f else 0.5f
+                val rr = R * ringRadius[ring]
+                val d = R * ringDot[ring]
+                val count = ringCount[ring]
                 for (i in 0 until count) {
-                    val a = (i.toFloat() / count) * 2f * PI.toFloat()
+                    val a = ((i + offset) / count) * 2f * PI.toFloat()
                     drawCircle(
                         color = GlowAccent.copy(alpha = alpha),
                         radius = d,
-                        center = Offset(c.x + ringR * cos(a), c.y + ringR * sin(a)),
+                        center = Offset(c.x + rr * cos(a), c.y + rr * sin(a)),
                     )
                 }
             }
 
-            // The orb itself. Off it is a dark disc with a dim rim, so it reads as a lamp that is
-            // not working rather than as a hole in the row.
+            // The orb. Off it is a dark disc inside a dim rim - a lamp that is not working,
+            // rather than a hole in the row. On it is white.
             drawCircle(
                 color = if (lit > 0.5f) GlowAccent else OrbOffFill,
-                radius = r * (0.34f + 0.10f * lit),
+                radius = orbR,
                 center = c,
             )
             if (lit <= 0.5f) {
                 drawCircle(
-                    color = OffInk.copy(alpha = 0.7f),
-                    radius = r * 0.34f,
+                    color = OffInk.copy(alpha = 0.75f),
+                    radius = orbR,
                     center = c,
-                    style = Stroke(width = r * 0.10f),
+                    style = Stroke(width = R * 0.055f),
                 )
-            }
-            // The hot centre, only once it is on.
-            if (lit > 0.02f) {
-                drawCircle(color = Color.White.copy(alpha = 0.9f * lit), radius = r * 0.18f * lit, center = c)
             }
         }
     }
@@ -266,7 +277,7 @@ fun GlowingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
 fun GlowingCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     GlowOrb(
         active = checked,
-        modifier = Modifier.size(22.dp),
+        modifier = Modifier.size(30.dp),
         role = Role.Checkbox,
         onValueChange = onCheckedChange,
     )
@@ -277,7 +288,7 @@ fun GlowingCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
 fun GlowingRadioButton(selected: Boolean, onClick: () -> Unit) {
     GlowOrb(
         active = selected,
-        modifier = Modifier.size(22.dp),
+        modifier = Modifier.size(30.dp),
         onClick = onClick,
     )
 }
@@ -394,7 +405,7 @@ fun GlowingSlider(
         ) {
             // Always lit, even when the slider is disabled: a handle that goes dark reads as a
             // slider that is broken rather than one that cannot be moved.
-            GlowOrb(active = true, bloom = 1.9f)
+            GlowOrb(active = true, rings = 1)
         }
     }
 }
@@ -402,10 +413,11 @@ fun GlowingSlider(
 /**
  * The handle is an orb, the same one every switch and tick is.
  *
- * Wider than the line it sits on, deliberately: the bloom needs room inside its own box to be
- * clipped rather than painted over the rows beside it, and the dot matrix needs somewhere to be.
+ * Wider than the line it sits on because the dot matrix needs somewhere to be: the rings are
+ * measured against this box, so a box that is only as big as the ball itself would have nowhere
+ * to put them and the halo would clip away to nothing.
  */
-private val SLIDER_THUMB_SIZE = 30.dp
+private val SLIDER_THUMB_SIZE = 34.dp
 
 /**
  * Two dp. It was six, and at six the filled half stopped reading as a line with a light on it and
