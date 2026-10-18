@@ -93,6 +93,19 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
      * here is what makes it reliable rather than incidental.
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        /**
+         * Whether the UP or CANCEL itself has to be swallowed, decided before the state is
+         * cleared below.
+         *
+         * This has to be captured first. Clearing [longPressFired] and [moving] and *then*
+         * asking whether to consume meant the answer was always no on the one event that
+         * mattered: the flag was already false by the time the check ran, so the UP fell through
+         * to the widget, its PendingIntent fired, and a long press on a news widget opened the
+         * article instead of arranging the widget. The state must describe the gesture that is
+         * ending while the decision about it is still being made.
+         */
+        var swallowFinalEvent = false
+
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
@@ -115,6 +128,7 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                swallowFinalEvent = longPressFired || moving
                 if (moving) {
                     moving = false
                     dragEnd?.invoke()
@@ -133,7 +147,7 @@ class LongPressFrameLayout(context: Context) : FrameLayout(context) {
         // Once the long press has fired or a drag has begun, the rest of the gesture is ours.
         // Consuming it here is what stops the widget underneath also acting on the press - the
         // UP never reaches it, so the long press is an edit and not also a tap.
-        if (longPressFired || moving) return true
+        if (swallowFinalEvent || longPressFired || moving) return true
 
         return super.dispatchTouchEvent(ev)
     }
