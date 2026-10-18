@@ -7,7 +7,10 @@ package dev.victorialauncher.ui.common
 
 import android.app.Activity
 import android.app.WallpaperManager
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -31,8 +34,17 @@ import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private const val TAG = "BlurredWallpaper"
+
+/** The Activity behind however many [ContextWrapper]s Compose wrapped the context in. */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 /**
- * The system wallpaper, blurred, filling whatever it is put behind.
+ * The layer behind the launcher window, softened, for the widget page.
  *
  * ## Why this is drawn at all
  *
@@ -42,93 +54,94 @@ import kotlinx.coroutines.withContext
  * you see exactly what is behind the page and the other lets you see that *something* is, which is
  * what makes a page feel like frosted glass rather than like a sheet of dark plastic laid over it.
  *
- * So the wallpaper is fetched and painted here, blurred, and the page's own scrim goes on top of
- * it. This is the one place in the app where that is the right trade: the widget page is a full
- * screen of arbitrary third-party widgets, and a blurred backdrop is the only thing that keeps
- * their colours from fighting the page's own chrome. The app panels and the long-press panel are
- * deliberately *not* doing this - they are overlays on something already there, and blurring what
- * is behind an overlay blurs the thing the overlay was opened from.
+ * ## Two ways, because each one alone has failed
+ *
+ * 1. **The window's own background blur.** `Window.setBackgroundBlurRadius` asks the platform to
+ *    blur the layer behind the window. Permission-free, and it blurs whatever is really there.
+ *    The first attempt silently did nothing, because it did `(LocalView.current.context as?
+ *    Activity)` - and a Compose view's context is normally a `ContextThemeWrapper`, so the cast
+ *    returned null every time and the whole thing quietly opted out. Hence [findActivity].
+ *
+ * 2. **The wallpaper, drawn by us and blurred.** `WallpaperManager.drawable` throws
+ *    `SecurityException: READ_MEDIA_IMAGES` on Android 13+, which a launcher should not be asking
+ *    for. `fastDrawable` is the API written for launchers and is tried first.
+ *
+ * Both are attempted because either may be unavailable - a locked secure wallpaper will not hand
+ * over a drawable either way - and one of them producing something is enough. What is logged here
+ * has been the difference between "the blur is wrong" and "the blur never ran".
  *
  * ## Cost
  *
- * A full-screen blur is a real offscreen pass every time this recomposes. The radius is a
- * deliberate compromise - enough to stop the wallpaper reading as wallpaper, not so much that it
- * turns into flat colour - and the image is fetched once and held, so the steady state is a
- * blurred bitmap being redrawn rather than the wallpaper being fetched and decoded repeatedly.
- * The page is only composed while it is on screen at all.
- *
- * ## If there is no wallpaper
- *
- * Some devices report none, and a locked secure one will not hand over a drawable. Falls back to
- * plain black, which is what the page had before any of this.
+ * The wallpaper is fetched once and held, so the steady state is a blurred bitmap being redrawn
+ * rather than the wallpaper being decoded repeatedly, and the window blur is switched off again on
+ * dispose so it costs nothing when the page is not on screen.
  */
 @Composable
 fun BlurredWallpaper(
     radius: Dp = 30.dp,
     modifier: Modifier = Modifier,
-    fallback: Color = Color.Black,
+    // **Transparent, and that is the whole point.**
+    //
+    // The launcher's window is translucent, so the system composites the blurred backdrop into the
+    // window's own background layer - and a single opaque fill over the top hides every bit of it.
+    // It was black, so the page went from "a sharp wallpaper under a scrim" (what it had always
+    // done) to "pure black", which looked exactly like the blur never running. It had run.
+    //
+    // Nothing is drawn at all when there is no wallpaper to draw; the window behind supplies
+    // whatever there is, blurred.
+    fallback: Color = Color.Transparent,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+    val density = LocalDensity.current
 
+    // (1) The system blur.
+    DisposableEffect(view, radius) {
+        val window = context.findActivity()?.window
+        val px = with(density) { radius.toPx() }.toInt()
+        val applied = window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        if (applied) {
+            Log.i(TAG, "window blur applied radius=$px")
+            window?.setBackgroundBlurRadius(px)
+        } else {
+            Log.i(TAG, "window blur NOT applied: window=$window sdk=${Build.VERSION.SDK_INT}")
+        }
+        onDispose { if (applied) window?.setBackgroundBlurRadius(0) }
+    }
+
+    // (2) The wallpaper, blurred by us.
     val wallpaper by produceState<ImageBitmap?>(initialValue = null, context) {
         value = withContext(Dispatchers.IO) {
-            try {
-                val wm = WallpaperManager.getInstance(context)
-                val drawable = wm.drawable
-                android.util.Log.i(
-                    "BlurredWallpaper",
-                    "drawable=" + (drawable?.let { "${it.intrinsicWidth}x${it.intrinsicHeight}" } ?: "null"),
-                )
-                if (drawable == null) null else drawable.toBitmap().asImageBitmap()
+            val wm = WallpaperManager.getInstance(context)
+            val drawable = try {
+                wm.fastDrawable
             } catch (t: Throwable) {
-                android.util.Log.i("BlurredWallpaper", "failed: ${t.javaClass.simpleName}: ${t.message}")
+                Log.i(TAG, "fastDrawable failed: ${t.javaClass.simpleName}: ${t.message}")
                 null
+            } ?: try {
+                wm.drawable
+            } catch (t: Throwable) {
+                Log.i(TAG, "drawable failed: ${t.javaClass.simpleName}: ${t.message}")
+                null
+            }
+            if (drawable == null) {
+                Log.i(TAG, "no wallpaper drawable available")
+                null
+            } else {
+                Log.i(TAG, "wallpaper ${drawable.intrinsicWidth}x${drawable.intrinsicHeight}")
+                runCatching { drawable.toBitmap().asImageBitmap() }.getOrNull()
             }
         }
     }
 
-    val view = LocalView.current
-    val density = LocalDensity.current
-
-    /**
-     * The blur itself, done by the **system**, not by us.
-     *
-     * This is the only way to blur what is behind a transparent launcher window, and the first
-     * attempt did not do it at all: `WallpaperManager.getDrawable()` fetches the wallpaper as a
-     * drawable, which on Android 13 and later needs `READ_MEDIA_IMAGES` -
-     *
-     *     SecurityException: Permission android.permission.READ_MEDIA_IMAGES denied
-     *
-     * - and a launcher has no business holding broad media access to make one page look nice.
-     * It is also the wrong shape of answer: it fetches a bitmap of the wallpaper when what is
-     * actually wanted is a blur of *everything* behind the window, whatever that happens to be.
-     *
-     * `Window.setBackgroundBlurRadius` is built for exactly this. The platform renders the layer
-     * behind the window once, blurs it, and hands it back - no permission, no decoding, and it
-     * costs nothing when the page is not on screen because it is switched off again on dispose.
-     *
-     * Needs API 31. Below that there is no way to do this and the page keeps its scrim.
-     */
-    DisposableEffect(view, radius) {
-        val window = (view.context as? Activity)?.window
-        val px = with(density) { radius.toPx() }
-        val applied = window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        if (applied) window?.setBackgroundBlurRadius(px.toInt())
-        onDispose { if (applied) window?.setBackgroundBlurRadius(0) }
-    }
-
     Box(
-        modifier
-            .fillMaxSize()
-            .background(fallback),
+        modifier.fillMaxSize(),
     ) {
         wallpaper?.let { image ->
             Image(
                 bitmap = image,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // The blur is applied to *this* content, which is why the wallpaper has to be
-                // painted here rather than left to the window behind.
                 modifier = Modifier
                     .fillMaxSize()
                     .blur(radius),
