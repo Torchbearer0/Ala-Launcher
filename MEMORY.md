@@ -221,6 +221,11 @@ proving BACK works proves nothing about the gesture — test with
 
 ## Last few commits
 
+- `c6e0649` Rebuild the left-hand page on Flow's placement model
+- `aab96de` test: the whole of arranging, as a list, before any UI is written on it
+- `ddf4aae` refactor: the placement model is Flow's - a list and a width, and nothing else
+- `f65446c` revert: the free-placement page, out entirely
+
 - `f1e059a` refactor: settings on true black, and the sections list given something to look at
 - `6595b6d` feat: the page reads as its own place, and a long press arranges a widget on it
 - `0626cc2` revert: put the page on the left back the way it was
@@ -247,3 +252,73 @@ proving BACK works proves nothing about the gesture — test with
   — that name is wrong and reading it returns garbage). Use `run-as … base64` then
   `[Convert]::FromBase64String`; the raw dump is protobuf, so strings and JSON need
   `[^ -]` stripped before reading.
+
+## The left-hand widget page, rebuilt (`c6e0649`)
+
+On Flow's model, which is an **ordered list plus one size per entry**. Read out of Flow 40.1.6:
+`WidgetModel(widgetId: Int, dimensionsInLine: Int?, habitId: Long)`. Searching that package
+for row/column/page/x/y/left/top/cellIndex returns nothing - no coordinates, so no collision and
+nothing to resolve a drop against. Every one of the removed page's six faults lived in that
+machinery. What is *added* to Flow is **width**, so two narrow widgets share a row; that is the
+one dimension Flow has no concept of, and it is why the line is a wrapping `FlowRow`.
+
+- `ui/home/MinusOnePage.kt` - the page. `ui/home/WidgetReorder.kt` - the arithmetic, moved
+  out of the **test** source set into main so the page can use it (15 tests stay in `WidgetReorderTest`).
+- Long-press an entry to arrange it: centre grip moves, bottom/right/corner resize, cross removes.
+- `WidgetReorder.targetIndex` counts from the neighbours' **centres**, not a fixed dp step - a
+  fixed step is twitchy on a short entry and sluggish on a tall one.
+- `onResize`/`onMove`/`onRemove` all go through `updateEntries`, which **re-reads** the
+  stored list inside the coroutine. A drag writes several times in a few hundred ms; applying
+  each to the snapshot the page opened with meant they overwrote each other and the drag stored
+  no change at all. This was one of the six original faults and it is easy to reintroduce.
+- Settings row restored. It was deleted with the page in `f65446c`, which made the mode
+  impossible to turn on - the page was unreachable and looked broken rather than absent.
+
+### Verified on device
+
+- Gap swipe across empty home space opens the page (y=800, 200 -> 900, 400ms).
+- Empty state renders; add FAB is at `[899,2195]-[1032,2328]`, centre **(965, 2261)**.
+- BACK closes the page and stays in the launcher. BACK while arranging ends the arrangement
+  first (registered later, so it wins).
+
+### Not yet verified - the phone disconnected
+
+The picker from the add button, two entries sharing a row, drag to reorder, the resize handles.
+Treat those as untested. The fixes are in; nothing proves them yet.
+
+## Two traps hit while doing this
+
+1. **An always-composed full-screen overlay eats every touch under it, even at alpha 0.** The
+   overlay had `.pointerInput` for swipe-to-dismiss and was composed while hidden; its handler
+   took the down and HomeScreen's gap handler **never started at all**. Logging which handler
+   ran is what found it - reasoning about Compose hit-testing did not. Now `if (minusOneVisible)`.
+   Same rule already applies to the notification shade.
+2. **The FAB set a flag and launched nothing.** `onAddWidgetToMinusOne` only assigned
+   `minusOneWidgetPicker = true`; it now also calls `widgetActions.onAddWidget(null)`, which
+   is the same launch the home screen's add button uses. One flag is not a launcher.
+
+## Hand-editing the DataStore (works, now known)
+
+The device had **no** `minus_one_mode` stored at all, so the default `OFF` applied and the
+page was unreachable. Wrote the key by hand. Shape, confirmed by the file's own existing keys:
+
+    0a <n>                      preferences entry
+    0a <klen> <key bytes>       KeyValuePair.key
+    12 <vlen>                   KeyValuePair.value  (a nested Value message)
+      <field tag> <len> <bytes> Value: 1=bool 08, 3=integer 18, 5=string 2a
+
+`12 02 08 01` is how an existing `true` looks, which is what gives the numbering away.
+Using **6** for string (the oneof-in-KeyValuePair numbering) corrupts the file and the app
+crashes on every launch in `PreferencesProto.PreferenceMap.parseFrom`. Original bytes saved at
+`C:\Users\udayk\AppData\Local\Temp\opencode\vprefs_orig.b64` if they want it reverted.
+To write: `adb push` to `/data/local/tmp`, then `run-as ... cp`, then `rm`.
+
+## Standing rules reaffirmed
+
+- Diagnose with device evidence, not reasoning. Both bugs above were found by logging which
+  handler ran, after reasoning had been confidently wrong twice.
+- `WidgetReorderTest`: three moves 0->4, 4->2, 2->0 compose back to `[a,b,c,d,e]`. Two
+  hand-computed expectations in it were wrong; the code was right.
+- The gap-swipe test coordinate must come from content bounds, not a fixed y - and with no
+  favourites and no widget there is no gap at all, so probe several y values.
+
