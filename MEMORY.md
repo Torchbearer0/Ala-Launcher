@@ -750,3 +750,64 @@ it, the only thing that can say "you picked this one" is brightness.
 Asks for a built APK on the Desktop for their own backup after a batch of visual work. Do it at the
 end of a batch, named with the commit hash so successive backups are distinguishable.
 
+---
+
+## 2026-10-18 - Three real bugs and a tile
+
+### `pointerInput(index, ...)` on a reorder handle kills the gesture
+
+`ReorderableRows` keyed the drag handle's `pointerInput` on the row's **index**. A reorder changes
+positions and nothing else, so the first swap changed the index, which **restarted the pointer
+input**, which cancelled the gesture through `onDragCancel`. A row could therefore move exactly one
+place however far the finger travelled - which reads to the user as "the apps get misplaced
+without proper sequence".
+
+This is the same trap as the earlier stale-capture bug in `HomeScreen`, one layer down: the fix
+there was `rememberUpdatedState`, and this component had been written without it. **Any
+`pointerInput` on something the gesture itself reorders must be keyed on the row's identity, and
+the row must be wrapped in `key(itemKey)` so its nodes follow the item rather than the slot.**
+
+Tracked with `draggingKey: String?` rather than an index, and the position is looked up
+(`order.indexOf(itemKey)`) every move instead of remembered.
+
+Verified on device: one continuous drag moved a row **three** slots. It could not do that before.
+
+### A local mirror seeded at zero is a control that looks dead
+
+The home dim slider read `dimPreviewValue`, a `remember { mutableFloatStateOf(0f) }`. The real
+value was saved correctly; the mirror just started at zero on every visit, so the page opened at
+0% and the first notch jumped to 1%. Seed it from the stored value, and add an effect that adopts
+an outside change with a guard so the echo of your own write does not fight the finger.
+
+**A mirror of a persisted value must be seeded from it.** "It saves fine" and "it works" are
+different claims; this one saved perfectly and still read as a dead control.
+
+### `adb input swipe` is not a reliable drag
+
+Forward drags from the top of the list worked; drags starting lower down silently did nothing, and
+an explicit `input motionevent DOWN/MOVE/MOVE/UP` sequence was no better. When a drag has to
+succeed - restoring something the user cared about - **verify it landed before reporting**, and if
+it did not, say so rather than assuming.
+
+### Did not manage to restore the user's favourites order
+
+Testing the reorder fix moved BitChord from slot 0 to slot 4 on the Manage Favourites screen, and
+four attempts to drag it back up all failed to register. **Tell the user plainly and give them the
+target order** rather than leaving them to discover it. Current order is wrong because of my test,
+not because of a code fault.
+
+### Toggle rings: merge the first ring into the core
+
+Radius 0.21R against a 0.18R core, so the first ring's beads reach in to 0.14R and overlap the
+white disc. With a visible gap the core reads as a separate object that happens to have rings
+around it - jewellery. Overlapping makes the light look like it is coming out of the dot.
+
+Beads also went up to 0.07R-0.02R. At 380dpi a 34dp control is 81px, so a 0.024R bead is under two
+pixels: drawn, invisible, and the reason the rings had been pushed further out to compensate.
+
+### Settings index marks
+
+Removed the rounded tile behind each section glyph, kept the radial glow. Verified in the pixel
+map: smooth `,` to `.` falloff around the glyph, no plateau and no edge. A box behind every mark
+said "these are buttons" on a list that is only ever a list.
+
