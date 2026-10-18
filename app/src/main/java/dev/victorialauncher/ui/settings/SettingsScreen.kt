@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
@@ -1877,18 +1878,50 @@ private fun EdgeSideRow(selected: EdgeSide, onSelect: (EdgeSide) -> Unit) {
 
 /** Shared with the clock widget's own settings, which offers the same kind of choices. */
 @Composable
+/**
+ * One option in a row of them - icon pack, font, text colour, icon shape.
+ *
+ * Selected it is **lit from the inside out**: a white pill with black writing on it and a white
+ * glow around it, so it reads as the one that is switched on rather than as a coloured one among
+ * grey ones. That is the Sailfish trick - the thing you picked is the light source, and the ink on
+ * it is the absence of light.
+ *
+ * Black on white rather than white on cyan was not a palette tidy-up. A tinted pill with dark
+ * writing is still a coloured pill, and on an AMOLED panel a coloured background is just paint;
+ * white is the only one that reads as being switched on. It also retires the last cyan on the
+ * settings screen without needing a second accent for it.
+ *
+ * Unselected it is unchanged: a barely-there fill and the ordinary text colour.
+ */
 internal fun FilledChip(
     label: String,
     selected: Boolean,
     fontFamily: FontFamily? = null,
     onClick: () -> Unit,
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val shape = RoundedCornerShape(50)
+    val bg = if (selected) GlowAccent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val fg = if (selected) Color.Black else MaterialTheme.colorScheme.onSurface
+
     Surface(
-        shape = RoundedCornerShape(50),
+        shape = shape,
         color = bg,
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .then(
+                if (selected) {
+                    // A real shadow rather than a drawn halo, so the glow follows the pill's own
+                    // shape. A circular gradient behind a wide short pill would read as a blob.
+                    Modifier.shadow(
+                        elevation = 10.dp,
+                        shape = shape,
+                        ambientColor = GlowAccent,
+                        spotColor = GlowAccent,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(onClick = onClick),
     ) {
         Text(
             label,

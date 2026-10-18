@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -165,11 +164,10 @@ fun GlowOrb(
     active: Boolean,
     modifier: Modifier = Modifier,
     /**
-     * How many rings of dots the halo has. Two reads as a lit lamp; one reads as a ball with a
-     * glow, which is what a slider handle wants - two rings around a small ball looks like a
-     * focus indicator rather than a light.
+     * How much texture the glow carries. Two rings for a toggle; one for a slider handle, where a
+     * full ring around a small dot reads as a focus indicator rather than as light.
      */
-    rings: Int = 2,
+    texture: Int = 2,
     onClick: (() -> Unit)? = null,
     role: Role? = null,
     onValueChange: ((Boolean) -> Unit)? = null,
@@ -208,20 +206,25 @@ fun GlowOrb(
             // matrix inside the footprint means the clip never has to do anything.
             val R = size.minDimension / 2f
 
-            val orbR = R * 0.40f
+            // The matrix, and it is still a matrix. Only the dots got smaller.
+            //
+            // The first attempt was blocky because the dots were big enough to touch: at 0.095 of
+            // the radius they were beads, and a ring of beads is a ring. Half that, with more of
+            // them so the ring still reads as continuous light, and the same glow is now made of
+            // points instead of lumps.
+            //
+            // Radii, count and alpha per ring, outer first. Off they are still drawn - dimly -
+            // because an unlit LED has a matrix around it too, and a control you cannot find is
+            // worse than one that is plainly off.
+            val ringRadius = floatArrayOf(0.84f, 0.60f)
+            val ringDot = floatArrayOf(0.030f, 0.042f)
+            val ringCount = intArrayOf(16, 10)
+            val ringAlpha = floatArrayOf(0.34f, 0.60f)
 
-            // The matrix, outermost ring first. Offsets are staggered by half a step between the
-            // rings so the dots do not line up into spokes - a matrix, not a spoke wheel.
-            val ringRadius = floatArrayOf(0.88f, 0.66f)
-            val ringDot = floatArrayOf(0.062f, 0.095f)
-            val ringCount = intArrayOf(12, 8)
-            val ringAlpha = floatArrayOf(0.42f, 0.72f)
-
-            val rings = minOf(rings, ringRadius.size)
+            val rings = minOf(texture, ringRadius.size)
             for (ring in 0 until rings) {
-                // Dull but present when off - an unlit LED still has a matrix around it - and
-                // bright when on. Never absent, so the control is findable either way.
-                val alpha = (0.14f + 0.86f * lit) * ringAlpha[ring]
+                val alpha = (0.12f + 0.88f * lit) * ringAlpha[ring]
+                // Half a step between the rings, so the dots do not line up into spokes.
                 val offset = if (ring == 0) 0f else 0.5f
                 val rr = R * ringRadius[ring]
                 val d = R * ringDot[ring]
@@ -236,8 +239,9 @@ fun GlowOrb(
                 }
             }
 
-            // The orb. Off it is a dark disc inside a dim rim - a lamp that is not working,
-            // rather than a hole in the row. On it is white.
+            // The core, and small. A point of light is a point: a big solid disc in the middle is
+            // what turned the lamp into a button.
+            val orbR = R * (0.12f + 0.06f * lit)
             drawCircle(
                 color = if (lit > 0.5f) GlowAccent else OrbOffFill,
                 radius = orbR,
@@ -245,10 +249,10 @@ fun GlowOrb(
             )
             if (lit <= 0.5f) {
                 drawCircle(
-                    color = OffInk.copy(alpha = 0.75f),
+                    color = OffInk.copy(alpha = 0.8f),
                     radius = orbR,
                     center = c,
-                    style = Stroke(width = R * 0.055f),
+                    style = Stroke(width = R * 0.04f),
                 )
             }
         }
@@ -380,19 +384,23 @@ fun GlowingSlider(
             Modifier
                 .fillMaxWidth()
                 .height(SLIDER_TRACK_HEIGHT)
-                .clip(CircleShape)
-                .background(if (enabled) GlowTrack else GlowTrack.copy(alpha = 0.4f), CircleShape),
+                .clip(RoundedCornerShape(1.dp))
+                .background(if (enabled) GlowTrack else GlowTrack.copy(alpha = 0.4f)),
         )
 
-        // The lit part of the line. No halo on it: at two dp a glow around the line reads as a
-        // second, fatter line rather than as light, and the handle is where the brightness
-        // belongs now.
+        // The lit part of the line.
+        //
+        // `height(SLIDER_TRACK_HEIGHT)`, not `fillMaxHeight()`. This box is a sibling of the track
+        // rather than a child of it, so filling the height fills the whole 40 dp slider *row* - the
+        // filled half came out as a 40 dp tall white slab the width of the value, which is exactly
+        // the chunky white pill the whole redesign was meant to get rid of. The track height has to
+        // be stated here, because nothing about the position in the tree implies it.
         Box(
             Modifier
                 .fillMaxWidth(fraction)
-                .fillMaxHeight()
-                .clip(CircleShape)
-                .background(if (enabled) GlowAccent else OffInk, CircleShape),
+                .height(SLIDER_TRACK_HEIGHT)
+                .clip(RoundedCornerShape(1.dp))
+                .background(if (enabled) GlowAccent else OffInk),
         )
 
         // The handle: an orb, at one end of the travel or the other and nowhere in between.
@@ -405,26 +413,26 @@ fun GlowingSlider(
         ) {
             // Always lit, even when the slider is disabled: a handle that goes dark reads as a
             // slider that is broken rather than one that cannot be moved.
-            GlowOrb(active = true, rings = 1)
+            GlowOrb(active = true, texture = 1)
         }
     }
 }
 
 /**
- * The handle is an orb, the same one every switch and tick is.
- *
- * Wider than the line it sits on because the dot matrix needs somewhere to be: the rings are
- * measured against this box, so a box that is only as big as the ball itself would have nowhere
- * to put them and the halo would clip away to nothing.
+ * The handle's footprint. It has to be bigger than the core so the matrix has somewhere to be,
+ * but not so much bigger that the handle reads as a block beside the line it sits on.
  */
-private val SLIDER_THUMB_SIZE = 34.dp
+private val SLIDER_THUMB_SIZE = 30.dp
 
 /**
- * Two dp. It was six, and at six the filled half stopped reading as a line with a light on it and
- * started reading as a bar being dragged along a channel. The handle carries the brightness now,
- * so the track does not have to as well.
+ * Three dp. It was six, and at six the filled half stopped reading as a line with a light on it
+ * and started reading as a bar being dragged along a channel. Two read as a hairline rather than
+ * as a control. Three is a line you can see and aim at.
+ *
+ * The ends are squared rather than semicircular: with `CircleShape` a three dp box gets round
+ * ends, and it is the ends that make a line read as a capsule rather than as a line.
  */
-private val SLIDER_TRACK_HEIGHT = 2.dp
+private val SLIDER_TRACK_HEIGHT = 3.dp
 
 private val SLIDER_ROW_HEIGHT = 40.dp
 

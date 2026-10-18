@@ -351,8 +351,15 @@ internal fun IconShapePeek(shape: IconShape, modifier: Modifier = Modifier) {
                     .size(40.dp)
                     .clip(outline)
                     .background(
-                        Brush.linearGradient(
-                            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
+                        // White falling off to nothing, not white into `secondary`. `secondary`
+                        // is Material's default muted purple, so this was the last place a hue
+                        // other than white survived, and a purple wash next to a row of white pills
+                        // reads as a different design language rather than as a shape preview.
+                        Brush.verticalGradient(
+                            listOf(
+                                GlowAccent.copy(alpha = 0.85f),
+                                GlowAccent.copy(alpha = 0.35f),
+                            ),
                         ),
                     )
                     .border(

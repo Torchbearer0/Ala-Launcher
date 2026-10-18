@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.R
+import dev.victorialauncher.ui.settings.FilledChip
 import androidx.compose.ui.res.stringResource
 
 /** Most a single pack contributes to a search, so one huge pack cannot bury the others. */
@@ -201,14 +202,9 @@ private fun PackIconCell(packPackage: String, drawableName: String, onClick: () 
 
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Surface(shape = RoundedCornerShape(50), color = bg, modifier = Modifier.clickable(onClick = onClick)) {
-        Text(
-            label,
-            color = fg,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-        )
-    }
+    // Delegated rather than reimplemented. This used to be a second copy of the option chip with
+    // the same colours written out again, which is how the two drifted: the settings chips became
+    // white-on-black with a glow while this one stayed a cyan pill with no glow, on the same
+    // screen. One chip, one definition.
+    FilledChip(label = label, selected = selected, onClick = onClick)
 }

@@ -50,8 +50,8 @@ fun fontFamilyOf(font: AppFont, fontFile: String?): FontFamily {
 private val customFontCache = mutableMapOf<String, FontFamily>()
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF7FD1E0),
-    onPrimary = Color(0xFF00363F),
+    primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF000000),
     background = Color.Transparent,
     surface = Color(0xFF1B2733),
     onSurface = Color(0xFFE3E8EC),

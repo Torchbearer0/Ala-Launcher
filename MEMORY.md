@@ -563,3 +563,70 @@ heights, spill above and below); the map is for seeing whether it looks right at
 - Backtick-pair backticks inside a double-quoted PowerShell string breaks the parse. Use
   single quotes for any line containing markdown backticks.
 
+---
+
+## 2026-10-18 - Toggle, slider and the last of the cyan
+
+### "Make the dots much smaller" means smaller, not gone
+
+I read "replace the dot matrix with a soft bloom" as *delete the dots and use a radial gradient*.
+The user corrected it: **the dots stay, they just get much smaller.** "Soft / delicate /
+starburst" describes how the glow should *feel*, not a different drawing primitive. When they
+describe a look, treat every noun as the thing they named and every adjective as a property of it.
+
+The blocky look was never the *idea* of the matrix, it was the dot **size**: at 0.095 of the
+radius the dots were beads and a ring of beads is a ring.
+
+New matrix: orb core **0.12 -> 0.18 R** (was 0.40), rings at **0.60 and 0.84 R** (was 0.66/0.88),
+dots at **0.042 and 0.030 R** (was 0.095/0.062), **10 and 16 of them** (was 8/12). More dots,
+each about a third the area, at lower alpha: the same ring of light made of points instead of
+lumps. Measured on device: a 7px core with 2px dots on a 34dp control.
+
+### The slider's "massive white capsule" was `fillMaxHeight()`, not the size constant
+
+The filled half is a **sibling** of the track, not a child of it. `.fillMaxHeight()` therefore
+fills the 40dp slider **row**, not the 3dp track:
+
+    white fill at x=400: rows 1499..1593 = 95px = 40dp   <- the "chunky white pill"
+
+Changing `SLIDER_TRACK_HEIGHT` could never have fixed it, and no amount of staring at the constant
+would have found it. It has to be `.height(SLIDER_TRACK_HEIGHT)`, stated explicitly, because
+nothing about the position in the tree implies it.
+
+**This is the same shape of bug as the old `Box` lays-children-at-TopStart trap: a size taken from
+the wrong box.** When a child looks wrong, find out *which box* it is being measured against
+before touching any constant. Verify by measuring the drawn extent (`white rows a..b`) - never by
+recomputing the arithmetic.
+
+Also: track ends are `RoundedCornerShape(1.dp)`, not `CircleShape`. Round ends are what make a
+short thick line read as a capsule.
+
+Final measured slider: track **3dp**, inactive grey at alpha 0.12, active white, handle core
+**13px** sitting exactly on the fill's end, one sparse sparkle ring at 30px.
+
+### Cyan: fix it at the source, and delete the second copy
+
+`colorScheme.primary` was `0xFF7FD1E0` - that was *all* the cyan on the settings screen. Changing
+it to white (and `onPrimary` to black) retired the accent in one edit, because every chip was
+already reading from the scheme.
+
+**Two definitions of the same chip is why they drift.** `IconPickerScreen` had its own `Chip` that
+picked the same two colours; the settings one became white-with-a-glow and that one stayed a flat
+cyan pill *on the same screen*. It now delegates to `FilledChip`. When fixing a duplicated
+component, delete the duplicate rather than making it match.
+
+Same for `SettingsComponents`: the icon-shape preview was `primary -> secondary`, and `secondary`
+is Material's default muted purple, so a purple wash sat next to a row of white pills. Now white
+fading to transparent.
+
+`FilledChip` selected = white pill + black text + `shadow(10.dp, ambientColor = White,
+spotColor = White)`. A real shadow, not a drawn halo, so the glow follows the pill's shape - a
+circular gradient behind a wide short pill reads as a blob.
+
+Verification that counts: **count pixels where B and G both exceed R by >18.** Appearance page,
+scrolled: `cyan=0, any-saturated-hue=0` of 641520 samples. The page is monochrome.
+
+### Still not fixed
+
+- `refreshWidgetBounds` in `HomeScreen.kt` measures only the first home widget.
+
