@@ -226,6 +226,8 @@ proving BACK works proves nothing about the gesture — test with
 - `ddf4aae` refactor: the placement model is Flow's - a list and a width, and nothing else
 - `f65446c` revert: the free-placement page, out entirely
 
+- `d95f543` fix: the glow was being clipped away, so there was no glow at all
+
 - `378d16f` feat: a switch is a lamp, not a mechanism
 
 - `baa2c42` feat: a welcome on first use, a dotted wave, and the app panel follows your finger
@@ -530,4 +532,34 @@ and blooming when on, no third state.
   to the nearer edge. I **cannot see it** - please say if the crest reads.
 - Splash now lights bottom to top so the wave forms. `welcome_seen` is false on the device, so
   it will appear once on next launch; one tap of Done clears it.
+
+
+## Clip the box AND fit the glow inside it (`d95f543`)
+
+`378d16f` solved the spill by clipping and **clipped the halo away entirely**. The rings were
+placed at 2.6x the orb's radius inside a box sized to the orb, so every dot fell outside the
+clip and nothing was drawn. Two mistakes stacked: the halo was far too large, and the clip was
+applied to a box that had no room for it.
+
+The rule that holds: **measure the matrix against the control's footprint, not the orb, and
+make the outermost dot land inside it.** Orb 0.40 of the half-width, rings at 0.66 and 0.88,
+dots 0.095 and 0.062 - the outermost edge reaches 0.94, inside 1.0. The clip is then a safety
+net rather than the thing making it work.
+
+Off, the dots are still drawn at alpha 0.14. An unlit LED has a matrix around it too, and a
+control you cannot find is worse than one that is plainly off.
+
+### Look at pixels as a map, not as counts
+
+Counting bright pixels told me *how many*, never *what shape*. Printing a character grid
+(2px cells: space black, dot dim, plus lit, hash bright) showed the rings, the core and the
+track immediately. **Do this for anything visual.** Counting is for proving a number (row
+heights, spill above and below); the map is for seeing whether it looks right at all.
+
+### PowerShell, final word
+
+- `Measure` collides with the `Measure-Object` alias. Do not name a function that.
+- ` = @()` then `[]` is an array, not a map. Use `@{}`.
+- Backtick-pair backticks inside a double-quoted PowerShell string breaks the parse. Use
+  single quotes for any line containing markdown backticks.
 
