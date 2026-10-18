@@ -210,8 +210,13 @@ fun GlowOrb(
                 .background(
                     Brush.radialGradient(
                         0.00f to GlowAccent.copy(alpha = 0.50f * lit),
-                        0.40f to GlowAccent.copy(alpha = 0.32f * lit),
-                        0.70f to GlowAccent.copy(alpha = 0.16f * lit),
+                        0.35f to GlowAccent.copy(alpha = 0.34f * lit),
+                        0.62f to GlowAccent.copy(alpha = 0.22f * lit),
+                        // Still clearly lit out here on purpose. The beads stop at 0.76R, so this
+                        // band is the haze *outside* them - and with the gradient fading to nothing
+                        // by the time it got there, there was no halo at all outside the dotted
+                        // circle, only glow tucked inside it.
+                        0.86f to GlowAccent.copy(alpha = 0.11f * lit),
                         1.00f to Color.Transparent,
                     ),
                 ),
@@ -273,6 +278,12 @@ fun GlowOrb(
  * give the whole pattern away - the eye is extremely good at finding a regular spacing, and it
  * reads "drawn" instantly. The gaps are jittered and then normalised so the ring still closes.
  *
+ * **The rings stop at 0.76R, not at the edge.** The outer quarter of the footprint is deliberately
+ * left empty so the haze has somewhere to be. With the beads reaching 0.86R there was no room left
+ * outside them for any at all, and the glow was entirely contained by the dotted circle - it read
+ * as a disc with a ring of dots on it rather than as something emitting. The last 0.24R is the
+ * halo, and it is the halo that makes the beads look like they are casting light.
+ *
  * **The first ring is drawn into the core, not next to it.** Its radius is 0.21R against a core of
  * 0.18R, so its beads reach in to 0.14R and overlap the white disc. They are the brightest beads
  * on the control and the core is a plain circle: with a visible gap between them the core reads as
@@ -298,7 +309,7 @@ private fun DrawScope.ringGlow(
 ) {
     val glow = 0.10f + 0.90f * lit
 
-    val ringRadius = floatArrayOf(0.21f, 0.31f, 0.42f, 0.54f, 0.68f, 0.84f)
+    val ringRadius = floatArrayOf(0.20f, 0.29f, 0.38f, 0.48f, 0.61f, 0.76f)
     val ringDot = floatArrayOf(0.070f, 0.040f, 0.062f, 0.034f, 0.048f, 0.020f)
     val ringCount = intArrayOf(8, 13, 14, 16, 18, 20)
     val ringAlpha = floatArrayOf(0.95f, 0.70f, 0.85f, 0.52f, 0.62f, 0.34f)

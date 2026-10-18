@@ -5,12 +5,15 @@
 
 package dev.victorialauncher.ui.common
 
+import android.app.Activity
 import android.app.WallpaperManager
+import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
@@ -20,6 +23,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -67,11 +72,49 @@ fun BlurredWallpaper(
 
     val wallpaper by produceState<ImageBitmap?>(initialValue = null, context) {
         value = withContext(Dispatchers.IO) {
-            runCatching {
-                val drawable = WallpaperManager.getInstance(context).drawable ?: return@runCatching null
-                drawable.toBitmap().asImageBitmap()
-            }.getOrNull()
+            try {
+                val wm = WallpaperManager.getInstance(context)
+                val drawable = wm.drawable
+                android.util.Log.i(
+                    "BlurredWallpaper",
+                    "drawable=" + (drawable?.let { "${it.intrinsicWidth}x${it.intrinsicHeight}" } ?: "null"),
+                )
+                if (drawable == null) null else drawable.toBitmap().asImageBitmap()
+            } catch (t: Throwable) {
+                android.util.Log.i("BlurredWallpaper", "failed: ${t.javaClass.simpleName}: ${t.message}")
+                null
+            }
         }
+    }
+
+    val view = LocalView.current
+    val density = LocalDensity.current
+
+    /**
+     * The blur itself, done by the **system**, not by us.
+     *
+     * This is the only way to blur what is behind a transparent launcher window, and the first
+     * attempt did not do it at all: `WallpaperManager.getDrawable()` fetches the wallpaper as a
+     * drawable, which on Android 13 and later needs `READ_MEDIA_IMAGES` -
+     *
+     *     SecurityException: Permission android.permission.READ_MEDIA_IMAGES denied
+     *
+     * - and a launcher has no business holding broad media access to make one page look nice.
+     * It is also the wrong shape of answer: it fetches a bitmap of the wallpaper when what is
+     * actually wanted is a blur of *everything* behind the window, whatever that happens to be.
+     *
+     * `Window.setBackgroundBlurRadius` is built for exactly this. The platform renders the layer
+     * behind the window once, blurs it, and hands it back - no permission, no decoding, and it
+     * costs nothing when the page is not on screen because it is switched off again on dispose.
+     *
+     * Needs API 31. Below that there is no way to do this and the page keeps its scrim.
+     */
+    DisposableEffect(view, radius) {
+        val window = (view.context as? Activity)?.window
+        val px = with(density) { radius.toPx() }
+        val applied = window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        if (applied) window?.setBackgroundBlurRadius(px.toInt())
+        onDispose { if (applied) window?.setBackgroundBlurRadius(0) }
     }
 
     Box(
