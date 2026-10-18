@@ -57,8 +57,11 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * One accent, and the light it throws.
@@ -162,8 +165,6 @@ private val ORB_SIZE = 34.dp
 fun GlowOrb(
     active: Boolean,
     modifier: Modifier = Modifier,
-    /** How many cells across the particle lattice is, one side. Nine is coarse enough to read. */
-    grid: Int = 9,
     onClick: (() -> Unit)? = null,
     role: Role? = null,
     onValueChange: ((Boolean) -> Unit)? = null,
@@ -202,8 +203,8 @@ fun GlowOrb(
             // matrix inside the footprint means the clip never has to do anything.
             val R = size.minDimension / 2f
 
-            // The glow is a field of dots, not rings - see particleGlow below.
-            particleGlow(center = c, radius = R, lit = lit, grid = grid)
+            // Bead rings, not a lattice - see ringGlow below.
+            ringGlow(center = c, radius = R, lit = lit)
 
             // The core, and small. A point of light is a point: a big solid disc in the middle is
             // what turned the lamp into a button.
@@ -226,32 +227,104 @@ fun GlowOrb(
 }
 
 /**
- * The glow: a lattice of dots, jittered, dense and coarse at the middle and fine and sparse at the
- * edge.
+ * The glow: concentric rings of beads, packed hard against the core and thinning as they go out.
  *
- * **Not rings.** Rings are the wrong shape for light. A ring has one radius, so it has one
- * brightness, so the eye reads a *circle drawn by someone* - and two of them read as a target.
- * What light around a point actually looks like is a field: the same material everywhere, thinning
- * out as it goes, with no edge you could put a finger on.
+ * Rings came back, but not the version that looked like a target. The thing that made the earlier
+ * ones read as an *object* was not that they were rings - it was that every ring was **the same
+ * weight**. A uniform ring has one radius, so one brightness, so a hard edge, and the eye reads a
+ * drawn circle. Three things fix that without giving up the symmetry:
  *
- * The structure is a square lattice, so the dots have something to be a *matrix* of - that grid is
- * what stops it reading as noise, and it is the same idea the icon's dotted wave is built from.
- * Every cell is then jittered off its own position, so the grid never shows through as a grid
- * while the pattern still stays identical every frame.
+ *  - **Alternating bead size.** Big, small, big, small. Two bead sizes at two radii is a texture;
+ *    six rings of identical dots is a dartboard.
+ *  - **Half a step of offset between neighbouring rings**, so each ring's beads sit in the gaps of
+ *    the one inside it rather than lining up with it. That is the whole reason the small ring and
+ *    the bigger one read as woven together rather than as two circles stacked up.
+ *  - **Packing that loosens outward.** The radii run 0.28R to 0.86R but the bead counts only 12 to
+ *    21, while the circumference grows faster than the count does - so the arc between one bead and
+ *    the next goes 0.15R, 0.17R, 0.20R, 0.21R, 0.23R, 0.26R. Dense against the core, sparse at the
+ *    edge, which is how light actually behaves, and it keeps the middle from looking solid.
  *
- * The falloff is three bands, and all three are continuous:
- *  - inside 0.34R: always drawn, at full size - a heavy bright bloom hard against the core.
- *  - 0.34R to 0.72R: size and probability both fall steadily.
- *  - 0.72R to 0.95R: minute and mostly absent, so the outer edge is a **ragged spray that simply
- *    runs out of dots** rather than a perfect circle that stops. This is the part that matters: a
- *    clean circular boundary is what made every earlier version look like a *thing*. A spray has
- *    no boundary, and a thing with no boundary reads as light.
+ * The outermost ring is the one exception to all of it: **minute beads at irregular spacing**, from
+ * the same stable hash the lattice used. Perfectly even spacing on the last ring is what would
+ * give the whole pattern away - the eye is extremely good at finding a regular spacing, and it
+ * reads "drawn" instantly. The gaps are jittered and then normalised so the ring still closes.
  *
- * Nothing goes past 0.95R, so the clip never bites and the ragged edge is ragged for the reason it
- * was designed to be rather than because it got cut off.
+ * Nothing passes 0.874R, so `clipToBounds()` never has to do anything and the beads are missed
+ * because the design stopped, not because the drawing ran out of room.
  *
- * Off, every band is scaled right down but still drawn: an unlit LED has a matrix around it too,
+ * Off, every ring is scaled right down but still drawn: an unlit LED has a matrix around it too,
  * and a control you cannot find is worse than one that is plainly off.
+ */
+private fun DrawScope.ringGlow(
+    center: Offset,
+    radius: Float,
+    lit: Float,
+) {
+    val glow = 0.10f + 0.90f * lit
+
+    val ringRadius = floatArrayOf(0.28f, 0.37f, 0.47f, 0.58f, 0.71f, 0.86f)
+    val ringDot = floatArrayOf(0.050f, 0.028f, 0.044f, 0.024f, 0.034f, 0.014f)
+    val ringCount = intArrayOf(12, 14, 15, 17, 19, 21)
+    val ringAlpha = floatArrayOf(0.95f, 0.70f, 0.85f, 0.52f, 0.62f, 0.34f)
+
+    val tau = 2f * PI.toFloat()
+
+    for (ring in 0 until ringRadius.size - 1) {
+        val rr = radius * ringRadius[ring]
+        val bead = radius * ringDot[ring]
+        val alpha = glow * ringAlpha[ring]
+        val n = ringCount[ring]
+        // Half a step on alternate rings, so the beads sit in the gaps of the ring inside them.
+        val a0 = (ring % 2) * 0.5f
+        for (i in 0 until n) {
+            val a = (i + a0) / n * tau
+            drawCircle(
+                color = GlowAccent.copy(alpha = alpha),
+                radius = bead,
+                center = Offset(center.x + rr * cos(a), center.y + rr * sin(a)),
+            )
+        }
+    }
+
+    // The outermost ring: same radius and count, but the gaps between beads are jittered and then
+    // rescaled so the ring still closes on itself. Minute beads, irregular distances - a spray
+    // that has run out of structure rather than one more evenly spaced circle.
+    val last = ringRadius.size - 1
+    val rr = radius * ringRadius[last]
+    val bead = radius * ringDot[last]
+    val alpha = glow * ringAlpha[last]
+    val n = ringCount[last]
+    val step = tau / n
+    val gaps = FloatArray(n) { step * (0.45f + 1.10f * scatter(it, 9)) }
+    val total = gaps.sum()
+    var acc = 0f
+    for (i in 0 until n) {
+        acc += gaps[i]
+        val a = acc / total * tau
+        drawCircle(
+            color = GlowAccent.copy(alpha = alpha),
+            radius = bead,
+            center = Offset(center.x + rr * cos(a), center.y + rr * sin(a)),
+        )
+    }
+}
+
+/**
+ * The glow for the slider handle: the same idea, but as a **filled cloud** rather than rings.
+ *
+ * A handle is a different object from a toggle and wants the opposite treatment. It sits on a
+ * three dp line, so a ring around it reads as a focus indicator, and the rings would all have to
+ * fit inside 30 dp. Filling the handle with particles instead makes the whole thing lit rather than
+ * outlined, and costs nothing in legibility because the handle's job is to be the brightest thing
+ * on the row.
+ *
+ * Deliberately a separate function rather than a flag on [ringGlow]: the two glows are not
+ * variants of one idea, they are different ideas, and sharing a parameter list between them is how
+ * one of them ends up looking like the other.
+ *
+ * The jitter is a fixed integer hash, **not [kotlin.random.Random]**. A `Random` drawn inside the
+ * draw lambda comes out different on every frame and repaint, and the handle shimmers like
+ * television static. Scattered is not the same thing as different-every-time.
  */
 private fun DrawScope.particleGlow(
     center: Offset,

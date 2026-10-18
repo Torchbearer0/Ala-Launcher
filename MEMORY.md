@@ -698,3 +698,55 @@ The ripple keeps a `RoundedCornerShape(50)` clip - it is transient and never at 
 - Slider: track **4.2dp**, handle core **24px**, particles running through the handle and out past
   it (filled, not ringed).
 
+---
+
+## 2026-10-18 - Bead rings come back, but not the old ones
+
+### The lattice was asymmetric. Concentric rings, but engineered this time
+
+The jittered lattice read as lopsided, which is the failure mode of any random placement: the eye
+is looking for a centre and a random field never quite gives it one. Rings restore the centre.
+What made the *first* rings read as a dartboard is not that they were rings - it is that every ring
+was the same weight. Three fixes, all in `ringGlow()`:
+
+- **Alternating bead size**: 0.050 / 0.028 / 0.044 / 0.024 / 0.034 / 0.014 R. Two sizes at two radii
+  is a texture; six rings of identical dots is a target.
+- **Half a step of offset on alternate rings**, so each ring's beads sit in the *gaps* of the ring
+  inside them. That is what makes them read as woven rather than stacked.
+- **Packing that loosens outward**: radii 0.28 -> 0.86 R but counts only 12 -> 21, and the
+  circumference grows faster than the count, so the gap between beads goes 0.15, 0.17, 0.20, 0.21,
+  0.23, 0.26 R. Dense against the core, sparse at the edge.
+
+Outermost ring only: minute beads at **irregular spacing** - gaps jittered by `scatter()` then
+rescaled so the ring still closes. Even spacing on the last ring gives the whole pattern away; the
+eye is extremely good at finding a regular spacing.
+
+`ringGlow` and `particleGlow` are deliberately two functions, not one with a flag. The toggle wants
+rings and the slider handle wants a filled cloud (a ring on a 3dp track is a focus indicator).
+Sharing a parameter list between two different ideas is how one ends up looking like the other.
+
+### Measured
+
+- Toggle ON: 255 max, 1192 lit pixels of 4900 (24%).
+- Toggle OFF: 33 max, 176 lit pixels (3.6%). A tiny dim speck, roughly double the background -
+  findable, not loud, which is what was asked for.
+
+### Chip glow: one blur is a smudge, two is a bloom
+
+14dp at alpha 0.42 was "not noticeable without searching for it". Now the same word is drawn
+**three times**, stacked: two faint copies (alpha 0.30 and 0.55) each carrying a white shadow at
+22dp and 8dp, then the crisp full-white word on top. The faint copies sit exactly under the bright
+one, so they contribute only their shadow and none of them thicken the letter.
+
+Measured at x=170 through the selected word: v goes 22, 26, 29, 34, 38, 42, 49, 57, 66, 76, 84,
+92, then 255 on the glyph. It was 22-40 flat before. That ramp is the whole difference between a
+glow you notice and one you don't.
+
+Unselected text is now `onSurface` at 0.62 alpha, so there is somewhere to go. With no pill behind
+it, the only thing that can say "you picked this one" is brightness.
+
+### User keeps the APKs
+
+Asks for a built APK on the Desktop for their own backup after a batch of visual work. Do it at the
+end of a batch, named with the commit hash so successive backups are distinguishable.
+

@@ -1885,20 +1885,21 @@ private fun EdgeSideRow(selected: EdgeSide, onSelect: (EdgeSide) -> Unit) {
  * list of words, and drawing a box around one of them says "this is a button, and the others are
  * not" - which is a different claim from "you picked this one", and a louder one.
  *
- * Unselected, the word is simply the ordinary text colour.
+ * Unselected, the word is the ordinary text colour, held back a little so there is somewhere to go.
  *
- * Selected, the word **glows**: white, with a wide soft white bloom around it. The glow is the
- * whole of the selection affordance, so it has to do the work a fill used to do - which is why the
- * text is drawn brighter than everything else on the page rather than merely tinted. It also means
- * the eye is drawn to the lit thing, not to a shape.
+ * Selected, the word is **lit**: full white, with a two-stop white bloom around it. Two stops,
+ * not one, because a single blur at low opacity is not a glow - it is a faint smudge you only
+ * notice once you go looking for it, which is exactly what the first attempt was. One wide soft
+ * pass and one tight bright pass stacked gives the bloom a shoulder and a core, so it reads at a
+ * glance from across the room rather than under a magnifier.
+ *
+ * The blur is a real text shadow rather than a drawn halo behind the label, so the light follows
+ * the shape of the glyphs - strokes, counters and all - instead of sitting in a rectangle.
  *
  * This is the same inversion the rest of the design language uses. On an AMOLED panel a background
  * colour is paint and only lit pixels read as *on*; the orb, the slider and the splash all get
  * their meaning from light rather than from fill, and a chip is the last control still doing it the
  * other way.
- *
- * The blur is a real text shadow rather than a drawn halo behind the label, so the light follows
- * the shape of the glyphs - strokes, counters and all - instead of sitting in a rectangle.
  */
 internal fun FilledChip(
     label: String,
@@ -1907,39 +1908,58 @@ internal fun FilledChip(
     onClick: () -> Unit,
 ) {
     val base = MaterialTheme.typography.labelLarge
-    val glowPx = with(LocalDensity.current) { CHIP_GLOW_BLUR.toPx() }
-    val style = if (selected) {
-        base.copy(
-            color = GlowAccent,
-            shadow = Shadow(
-                color = GlowAccent.copy(alpha = 0.42f),
-                offset = Offset.Zero,
-                blurRadius = glowPx,
-            ),
-        )
-    } else {
-        base.copy(color = MaterialTheme.colorScheme.onSurface)
-    }
+    val wide = with(LocalDensity.current) { CHIP_GLOW_WIDE.toPx() }
+    val tight = with(LocalDensity.current) { CHIP_GLOW_TIGHT.toPx() }
 
-    Text(
-        label,
-        style = style,
-        fontFamily = fontFamily,
-        modifier = Modifier
-            // Rounded so the press ripple is a pill. The ripple is transient and never sits still,
-            // so it can afford a shape; the resting state deliberately does not have one.
-            .clip(RoundedCornerShape(50))
-            .clickable(onClick = onClick)
-            // Still padded, so the tap targets of neighbouring words do not touch and the rows
-            // keep the same rhythm they had when each word sat in a pill.
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-    )
+    // The same word three times, stacked. The two faint copies sit exactly under the bright one,
+    // so all they contribute is their shadow - the bloom - and none of them thickens the letter.
+    Box(contentAlignment = Alignment.Center) {
+        if (selected) {
+            Text(
+                label,
+                style = base.copy(
+                    color = GlowAccent.copy(alpha = 0.30f),
+                    shadow = Shadow(GlowAccent.copy(alpha = 0.85f), Offset.Zero, wide),
+                ),
+                fontFamily = fontFamily,
+            )
+            Text(
+                label,
+                style = base.copy(
+                    color = GlowAccent.copy(alpha = 0.55f),
+                    shadow = Shadow(GlowAccent.copy(alpha = 0.95f), Offset.Zero, tight),
+                ),
+                fontFamily = fontFamily,
+            )
+        }
+        Text(
+            label,
+            style = base.copy(
+                color = if (selected) {
+                    GlowAccent
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+                },
+            ),
+            fontFamily = fontFamily,
+            modifier = Modifier
+                // Rounded so the press ripple is a pill. The ripple is transient and never sits
+                // still, so it can afford a shape; the resting state deliberately does not have
+                // one.
+                .clip(RoundedCornerShape(50))
+                .clickable(onClick = onClick)
+                // Still padded, so the tap targets of neighbouring words do not touch and the rows
+                // keep the same rhythm they had when each word sat in a pill.
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        )
+    }
 }
 
 /**
- * How far the light around a selected word spreads.
+ * Two blur radii, in dp, for a selected word's bloom.
  *
- * Wider than the glyph is tall on purpose: a tight shadow just thickens the strokes and reads as
- * bold text, which is not the same thing at all as lit text.
+ * The wide one is more than twice the cap height on purpose: a tight shadow just thickens the
+ * strokes and reads as bold text, which is not the same thing at all as lit text.
  */
-private val CHIP_GLOW_BLUR = 14.dp
+private val CHIP_GLOW_WIDE = 22.dp
+private val CHIP_GLOW_TIGHT = 8.dp
