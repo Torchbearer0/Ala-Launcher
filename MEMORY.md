@@ -924,3 +924,61 @@ They have since switched to "The list you keep". The divergence diagnosis above 
 still needs fixing - but with MANUAL selected, the Manage Favourites screen now edits the list the
 home screen actually draws, so the two should agree until step 1 is done.
 
+
+---
+
+## 2026-10-18 - RENAMED TO ALA. Read this first.
+
+The app is **Ala Launcher**, `dev.alalauncher`. Everything below in this file that says
+`victoria-launcher` refers to the *repo directory on disk*, which was NOT renamed (it cannot be
+from here - no gh CLI and no credentials).
+
+- applicationId / namespace: `dev.alalauncher`
+- Classes: AlaApp, AlaNavHost, AlaAppWidgetHost, AlaAccessibilityService, AlaTheme, Theme.AlaLauncher
+- DataStore file: `ala_prefs.preferences_pb`
+- versionCode 200, versionName 1.0
+- Release APK is **1.96 MB**; the debug APK is 17.78 MB. Almost all of that difference is R8
+  stripping the unused material-icons-extended vectors - the app references 68.
+
+### The credits were explicitly excluded, and a blanket replace broke them
+
+The user said: rename every code and line **except the credit**. This is a GPL derivative of
+**adelmonte/ala-launcher** (`UPSTREAM_URL`, `UPSTREAM_AUTHOR` in SettingsScreen.kt).
+
+A generic `Victoria -> Ala` replace silently rewrote two credit strings:
+`settings_credits_built_on` ("Built on Victoria Launcher" -> "...Ala Launcher") and
+`settings_credits_licence` ("Victoria Launcher and its author retain their copyright"). Both were
+put back from `git show HEAD`. **Check the About section renders the upstream credit correctly
+before shipping anything further.**
+
+### The byte-preserving rewrite
+
+The standing rule is never to bulk-rewrite Kotlin with PowerShell, because whole-file writes have
+corrupted it before. For a 107-file mechanical rename that rule cannot be followed literally, so
+the replacement was done through **ISO-8859-1 (28591)**, whose byte<->char round trip is exact:
+read bytes -> decode Latin1 -> replace ASCII -> encode Latin1 -> write bytes. Anything outside the
+matched substring is byte-identical afterwards, and `git diff` confirmed it.
+
+`app/src/test/java/dev/victorialauncher` was missed by the first `git mv` and had to be moved
+separately - Kotlin compiles a mismatched directory happily, so the 220 tests passed while the
+path was still wrong. **A passing build does not mean the paths are right.**
+
+### Backup needs no updating, ever
+
+`Prefs.exportJson` iterates `stored.asMap()` - every key in the DataStore - rather than keeping a
+list. Import rebuilds keys by name. So a new setting cannot be forgotten by backup, because backup
+never knew what settings existed. Do not add keys to an export list; there is no list.
+
+### The two apps coexist
+
+`dev.alalauncher` installs **alongside** `dev.victorialauncher` (different applicationId), so the
+old app and its settings are intact. That is what makes the restore possible: export from the old
+one, import into the new one.
+
+### Still open
+
+- Reorder render glitch (LazyColumn winning the gesture race) - fixed in code, unverified on device.
+- Favourites resolver rewrite - root cause and design are in the 2026-10-18 entry above.
+- `lintVitalRelease` fails and is skipped. Fine for a debug-signed personal build; it is a gate on
+  anything wider.
+- GitHub repo rename not done - no gh CLI, no token.
