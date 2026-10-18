@@ -35,7 +35,7 @@ android {
         targetSdk = 35
         // Kept ahead of the last upstream build rather than reset, so installing over the
         // existing app is an update and not a downgrade Android refuses.
-        versionCode = 108
+        versionCode = 200
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
