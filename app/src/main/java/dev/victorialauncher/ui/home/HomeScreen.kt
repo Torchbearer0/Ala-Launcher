@@ -1367,11 +1367,13 @@ private fun FavoriteRow(
     onAddWidget: (String?) -> Unit,
     /**
      * Asks the screen to show the panel for this app: [topDp] is where it starts vertically
-     * and [leftDp] where its own left edge sits.
+     * and [leftDp] how far across it begins.
      *
-     * Both come from the row rather than being computed. The panel belongs to the row that
-     * opened it — it starts just under that row and lines up with where its icon is, so it
-     * reads as coming out of the thing you swiped rather than appearing from the screen edge.
+     * [topDp] comes from the row, because the panel belongs to the row that opened it and
+     * starting just under that row is what makes it read as coming out of it. [leftDp] comes
+     * from the finger instead, because the long-press menu on the same screen appears wherever
+     * you pressed, and two menus opened by the same kind of gesture landing in different places
+     * read as a mistake rather than as a design.
      */
     onOpenPanel: (AppInfo, Dp, Dp) -> Unit,
 ) {
@@ -1382,18 +1384,16 @@ private fun FavoriteRow(
     // Kept here rather than read from the screen when the panel opens: between the swipe and
     // the panel being drawn the list can move, and it would open from where the row used to be.
     var rowBottomPx by remember { mutableStateOf(0f) }
-    var rowLeftPx by remember { mutableStateOf(0f) }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
-                // The panel opens from this row's own place: its bottom edge for where it
-                // starts, and its left edge for how far across it does. Measured in window
-                // space, because the home stack is offset by the scroll.
+                // The panel opens from this row's own place: its bottom edge for where it starts.
+                // Measured in window space, because the home stack is offset by the scroll. How
+                // far across it opens comes from the finger, not from here - see onOpenPanel.
                 .onGloballyPositioned {
                     val b = it.boundsInWindow()
                     rowBottomPx = b.bottom.toFloat()
-                    rowLeftPx = b.left.toFloat()
                 }
                 // Only the icon and name answer a tap when the row is narrowed to them; the
                 // rest of the line is the home screen again, not a button nobody can see.
@@ -1416,7 +1416,7 @@ private fun FavoriteRow(
                                 // one line tall, and a panel drawn inside it is clipped to it —
                                 // which is exactly what the dropdown this replaced never was,
                                 // because a popup is not drawn inside its anchor at all.
-                                onOpenPanel(app, with(density) { rowBottomPx.toDp() }, with(density) { rowLeftPx.toDp() })
+                                onOpenPanel(app, with(density) { rowBottomPx.toDp() }, with(density) { touchPosition.value.x.toDp() })
                             }
                             .combinedClickable(
                                 interactionSource = interaction,

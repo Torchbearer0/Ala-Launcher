@@ -1355,7 +1355,7 @@ fun HomeRoute(
         }
 
         if (showWelcome) {
-            WelcomeDialog(onDismiss = onWelcomeDismissed)
+            WelcomeFlow(onDismiss = onWelcomeDismissed)
         }
 
         folderPickerFor?.let { target ->

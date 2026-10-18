@@ -75,6 +75,15 @@ private const val ICON_PX = 72
 /** Clear of the navigation bar and the gesture pill. */
 private const val PANEL_BOTTOM_GAP_DP = 28
 
+/**
+ * The narrowest a panel is allowed to get.
+ *
+ * It follows the finger across, so without a floor a swipe near the right edge would open a panel
+ * a few icons wide with the rest of its contents off the screen. This is about the width of the
+ * widest thing it can hold - the app's own icon and name on one line - plus a little air.
+ */
+private const val PANEL_MIN_WIDTH_DP = 220
+
 /** Tall enough for notifications, five shortcuts and four widgets, and no taller. */
 private const val PANEL_MAX_HEIGHT_DP = 560
 
@@ -108,6 +117,9 @@ fun AppPanel(
     val density = context.resources.displayMetrics.density
     val densityPx = context.resources.displayMetrics.densityDpi
     val packageName = app.componentName.packageName
+
+    // How far across the panel may start and still leave it [PANEL_MIN_WIDTH_DP] wide.
+    val maxLeftDp = (LocalConfiguration.current.screenWidthDp - PANEL_MIN_WIDTH_DP - 8).coerceAtLeast(0).dp
 
     val all by NotificationBus.notifications.collectAsState()
     // This app's own, and not its group summary: the summary is a heading for messages that
@@ -166,11 +178,19 @@ fun AppPanel(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                // Only as tall as what it has to say, and starting under the row that opened
-                // it and in line with that row's icon. A panel pinned to the screen's corner
-                // reads as a dialog; one that comes out of the row reads as belonging to it.
+                // Only as tall as what it has to say, and starting under the row that opened it.
+                // A panel pinned to the screen's corner reads as a dialog; one that comes out of
+                // the row reads as belonging to it.
                 .offset { IntOffset(0, placedTopPx.roundToInt()) }
-                .padding(start = leftDp, end = 8.dp)
+                // Where it starts across, clamped so it always keeps a usable width.
+                //
+                // This used to be pinned to the row's icon, which on a left-aligned list put every
+                // panel hard against the left edge no matter where the row was. The long-press
+                // menu on the same screen appears wherever you pressed, and the two sitting at
+                // different horizontal places for the same gesture read as a mistake. So the
+                // panel follows the finger now too - with a floor, because anchoring to a touch
+                // near the right edge literally would squeeze the panel to a few icons wide.
+                .padding(start = leftDp.coerceIn(0.dp, maxLeftDp), end = 8.dp)
                 .widthIn(max = 340.dp)
                 // A ceiling for a panel with a great deal in it. The list inside scrolls, so
                 // hitting this costs nothing but the bottom rows being below the fold.

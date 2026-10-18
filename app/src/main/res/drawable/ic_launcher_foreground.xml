@@ -1,19 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  A wave, and the swell behind it.
+  A wave drawn in dots.
 
-  Two strokes rather than one, because a single line reads as a squiggle and two lines read as
-  water. The front wave is white and thick; the one behind is lighter blue, thinner and higher up,
-  which puts it further away - distance on a flat icon is only ever going to come from size and
-  contrast, so those are what carry it.
+  Two lines of dots rather than two strokes, because a dotted line reads as water and a
+  solid one reads as a graph. The dots sit on two quadratic curves - the same pair of
+  arches the stroke version used, so the shape of the swell is unchanged - and each one
+  tapers along the way, which is the only thing that makes a row of dots look like it is
+  moving rather than like a dotted rule.
 
-  Each is a pair of quadratic curves, one arching up and one dipping down, which is enough to get
-  the rhythm of a swell without the fuss of a real sine. Round caps, because a wave has no corners
-  in it and a squared-off end is the thing that gives away that it was drawn rather than surfed.
-
-  Everything sits inside the middle 72 of the 108, which is the only part of an adaptive icon a
-  launcher is obliged to show - anything outside it is cropped by whichever mask the device uses,
-  so a crest that reaches the edge is a crest that some launchers cut off.
+  The eleven front dots and six behind are placed by hand along those curves rather than
+  being generated at runtime, because a launcher icon is a drawable and anything computed
+  would have to be drawn into a canvas instead.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -21,21 +18,24 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- The swell behind: higher up, thinner, and the colour of sky on water. -->
-    <path
-        android:pathData="M26,45 Q39,36 52,45 Q65,54 78,45"
-        android:strokeColor="#8FD6F2"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000" />
+    <!-- The swell behind: a second dotted line, higher up and lighter. -->
+    <path android:pathData="M28,45 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" android:fillColor="#8FD6F2" />
+    <path android:pathData="M36,41.6 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" android:fillColor="#8FD6F2" />
+    <path android:pathData="M44,39.6 a2.0,2.0 0 1,0 4.0,0 a2.0,2.0 0 1,0 -4.0,0" android:fillColor="#8FD6F2" />
+    <path android:pathData="M52,39.6 a1.9,1.9 0 1,0 3.8,0 a1.9,1.9 0 1,0 -3.8,0" android:fillColor="#8FD6F2" />
+    <path android:pathData="M60,41.6 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0" android:fillColor="#8FD6F2" />
+    <path android:pathData="M68,45 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0" android:fillColor="#8FD6F2" />
 
-    <!-- The wave in front. -->
-    <path
-        android:pathData="M22,63 Q37,51 52,63 Q67,75 82,63"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="7"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000" />
+    <!-- The wave in front: bigger, white, tapering as it goes. -->
+      <path android:pathData="M17.4,63 a4.6,4.6 0 1,0 9.2,0 a4.6,4.6 0 1,0 -9.2,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M23.59,59.2 a4.41,4.41 0 1,0 8.82,0 a4.41,4.41 0 1,0 -8.82,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M29.78,57.2 a4.22,4.22 0 1,0 8.44,0 a4.22,4.22 0 1,0 -8.44,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M35.97,57.2 a4.03,4.03 0 1,0 8.06,0 a4.03,4.03 0 1,0 -8.06,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M42.16,59.2 a3.84,3.84 0 1,0 7.68,0 a3.84,3.84 0 1,0 -7.68,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M48.35,63 a3.65,3.65 0 1,0 7.3,0 a3.65,3.65 0 1,0 -7.3,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M54.54,66.8 a3.46,3.46 0 1,0 6.92,0 a3.46,3.46 0 1,0 -6.92,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M60.73,68.8 a3.27,3.27 0 1,0 6.54,0 a3.27,3.27 0 1,0 -6.54,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M66.92,68.8 a3.08,3.08 0 1,0 6.16,0 a3.08,3.08 0 1,0 -6.16,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M73.11,66.8 a2.89,2.89 0 1,0 5.78,0 a2.89,2.89 0 1,0 -5.78,0" android:fillColor="#FFFFFFFF" />
+      <path android:pathData="M79.3,63 a2.7,2.7 0 1,0 5.4,0 a2.7,2.7 0 1,0 -5.4,0" android:fillColor="#FFFFFFFF" />
 </vector>

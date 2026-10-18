@@ -306,11 +306,19 @@
     <string name="icon_picker_no_matches">No icons match “%1$s”.</string>
 
     <!-- Welcome -->
-    <string name="welcome_title">Welcome to Ala</string>
-    <string name="welcome_favorites">Long-press the wallpaper to add favorites, a widget, or open settings.</string>
-    <string name="welcome_widget">Swipe in from either edge of the screen for all your apps, and slide along the A-Z strip to jump to a letter.</string>
-    <string name="welcome_layout">Edit layout lets you move things around and set the spacing.</string>
-    <string name="welcome_got_it">Got it</string>
+    <string name="welcome_headline">Welcome to Ala</string>
+    <string name="welcome_sub">A home screen that gets out of the way — yours to arrange, quick to reach, and entirely offline.</string>
+    <string name="welcome_next">Next</string>
+    <string name="welcome_done">Done</string>
+    <string name="welcome_features_title">What it does</string>
+    <string name="welcome_features_sub">Everything below works with no account, no sign-in and no network.</string>
+    <string name="welcome_f_favourites">Long-press the wallpaper to add favourites, a widget, or open settings.</string>
+    <string name="welcome_f_page">A page to the left for widgets and shortcuts. Resize any of them, and Ala fills the space you leave with the next one.</string>
+    <string name="welcome_f_apps">Swipe in from either edge for all your apps, and slide the A-Z strip to jump to a letter.</string>
+    <string name="welcome_f_notifications">Notifications live on the home screen. Reply and act on them without leaving it.</string>
+    <string name="welcome_f_panel">Swipe an app sideways for its shortcuts and the widgets it offers.</string>
+    <string name="welcome_f_private">A private space, held behind a prompt until you open it.</string>
+    <string name="welcome_f_offline">No internet permission, no analytics, nothing sent anywhere.</string>
 
     <!-- Widgets -->
     <string name="widget_add">Add widget</string>
