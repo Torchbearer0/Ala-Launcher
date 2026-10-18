@@ -117,14 +117,15 @@ internal fun GlowingMark(
                 ),
         )
         Box(
-            Modifier
-                .size(size * 0.68f)
-                .clip(RoundedCornerShape(size * 0.24f))
-                .background(
-                    Brush.linearGradient(
-                        listOf(glow.copy(alpha = 0.22f), glow.copy(alpha = 0.06f)),
-                    ),
-                ),
+            // The tile is gone: no clip, no fill, no shape. Only the glyph, floating in its glow.
+            //
+            // A rounded square behind every section mark said "these are buttons", and on a list
+            // that is only ever a list it is a claim the layout cannot back up - it is a row you
+            // read, not a thing you press, and the row already says what it is. The glow above is
+            // doing the same job without the box: it gives each mark a halo to sit in, which is
+            // what made the grey tile look tinted in the first place, so the tile was never needed
+            // to carry the accent.
+            Modifier.size(size * 0.68f),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

@@ -249,7 +249,19 @@ fun GlowOrb(
  * give the whole pattern away - the eye is extremely good at finding a regular spacing, and it
  * reads "drawn" instantly. The gaps are jittered and then normalised so the ring still closes.
  *
- * Nothing passes 0.874R, so `clipToBounds()` never has to do anything and the beads are missed
+ * **The first ring is drawn into the core, not next to it.** Its radius is 0.21R against a core of
+ * 0.18R, so its beads reach in to 0.14R and overlap the white disc. They are the brightest beads
+ * on the control and the core is a plain circle: with a visible gap between them the core reads as
+ * a separate object that happens to have rings around it, and the whole thing looks like a piece of
+ * jewellery. Overlapping them is what makes the glow look like it is *coming out of* the core
+ * rather than being arranged near it. Everything outward from there is free to be its own thing.
+ *
+ * Beads are also large - 0.07R down to 0.02R. At the sizes this started with, a 34dp control on a
+ * 380dpi panel is 81px, so a 0.024R bead is under two pixels across: technically drawn, entirely
+ * invisible, and the rings had to be pushed further out to compensate, which only spread them
+ * thinner.
+ *
+ * Nothing passes 0.86R, so `clipToBounds()` never has to do anything and the beads are missed
  * because the design stopped, not because the drawing ran out of room.
  *
  * Off, every ring is scaled right down but still drawn: an unlit LED has a matrix around it too,
@@ -262,9 +274,9 @@ private fun DrawScope.ringGlow(
 ) {
     val glow = 0.10f + 0.90f * lit
 
-    val ringRadius = floatArrayOf(0.28f, 0.37f, 0.47f, 0.58f, 0.71f, 0.86f)
-    val ringDot = floatArrayOf(0.050f, 0.028f, 0.044f, 0.024f, 0.034f, 0.014f)
-    val ringCount = intArrayOf(12, 14, 15, 17, 19, 21)
+    val ringRadius = floatArrayOf(0.21f, 0.31f, 0.42f, 0.54f, 0.68f, 0.84f)
+    val ringDot = floatArrayOf(0.070f, 0.040f, 0.062f, 0.034f, 0.048f, 0.020f)
+    val ringCount = intArrayOf(8, 13, 14, 16, 18, 20)
     val ringAlpha = floatArrayOf(0.95f, 0.70f, 0.85f, 0.52f, 0.62f, 0.34f)
 
     val tau = 2f * PI.toFloat()

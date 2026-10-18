@@ -327,7 +327,19 @@ fun SettingsScreen(
     var dimPreviewTick by remember { mutableIntStateOf(0) }
     // Which of the two dims is being adjusted, since they are set separately and each is the
     // honest answer only for its own screen.
-    var dimPreviewValue by remember { mutableFloatStateOf(0f) }
+    //
+    // Seeded from the stored value, not from zero. This is a local mirror rather than a read of
+    // the setting so the preview overlay can follow the finger without waiting on a DataStore
+    // write - but a mirror that starts at zero is a mirror of nothing, so every visit to this page
+    // opened with the slider at 0% while the real value sat in storage, and moving it a single
+    // notch jumped from 0 straight to 1%. That read as a dead control: the value was being saved
+    // perfectly well, the slider was just never told what it was.
+    var dimPreviewValue by remember { mutableFloatStateOf(dimHomeAlpha) }
+    // ...and kept honest if the stored value changes from outside while this page is open.
+    // The guard means the echo of our own write does not fight the finger.
+    LaunchedEffect(dimHomeAlpha) {
+        if (kotlin.math.abs(dimPreviewValue - dimHomeAlpha) > 0.001f) dimPreviewValue = dimHomeAlpha
+    }
     LaunchedEffect(dimPreviewTick) {
         if (dimPreviewTick == 0) return@LaunchedEffect
         dimPreviewShown = true
@@ -717,8 +729,6 @@ fun SettingsScreen(
                 valueLabel = "${(dimWallpaperAlpha * 100).roundToInt()}%",
                 onValueChange = {
                     val next = (it * 100).roundToInt() / 100f
-                    dimPreviewValue = next
-                    dimPreviewTick++
                     onSetDimWallpaper(next)
                 },
                 step = 0.01f,

@@ -479,10 +479,28 @@ fun HomeScreen(
 
     /** Recomputed after the widget reports, against the list as it is now rather than as it was. */
     fun refreshWidgetBounds() {
-        val widget = displayItems.firstOrNull { it is HomeItem.Widget } ?: return
-        val key = measureKey(widget)
-        val top = itemTops[key] ?: return
-        val bottom = top + (itemHeights[key] ?: return)
+        // Every widget, not the first one.
+        //
+        // This takes the min top and the max bottom across the whole stack, which is what "the
+        // widget" means when there are three of them. Taking only the first meant the rows below it
+        // read as empty space, so a right-swipe starting over the second or third widget opened
+        // the widget page from on top of the widget - one gesture behaving differently depending on
+        // which of several identical things you happened to touch.
+        val widgets = displayItems.filterIsInstance<HomeItem.Widget>()
+        if (widgets.isEmpty()) {
+            if (widgetBounds != null) widgetBounds = null
+            return
+        }
+        var top = Float.MAX_VALUE
+        var bottom = -Float.MAX_VALUE
+        for (w in widgets) {
+            val k = measureKey(w)
+            val t = itemTops[k] ?: continue
+            val h = itemHeights[k] ?: continue
+            if (t < top) top = t
+            if (t + h > bottom) bottom = t + h
+        }
+        if (bottom <= top) return
         val current = widgetBounds
         if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
             widgetBounds = top to bottom
