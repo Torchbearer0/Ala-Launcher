@@ -69,7 +69,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.victorialauncher.R
-import dev.victorialauncher.ui.common.BlurredWallpaper
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.MINUS_ONE_NEW_WIDGET_HEIGHT_DP
 import dev.victorialauncher.data.MinusOneEntry
@@ -253,18 +252,18 @@ private fun WidgetList(
         // screen it was reached from. Graded rather than flat: content sits under the top, and a
         // flat wash leaves the middle of the stack floating.
         //
-        // The values are the ones this page started with. They were lowered on the assumption that
-        // a blurred wallpaper would be sitting behind this scrim, which it never is - see
-        // BlurredWallpaper for why the launcher cannot get the wallpaper at all. Over a sharp
-        // photograph these alphas are what keep the widgets legible.
+        // Lighter than this was before, because there is now something worth seeing under it: the
+        // home screen behind is blurred while the page is up, exactly as it is behind the app
+        // panel and the long-press menu. At the old 0.55-0.72 the scrim swallowed that blur whole
+        // and the page was a flat sheet again.
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.55f),
-                        0.45f to Color.Black.copy(alpha = 0.62f),
-                        1f to Color.Black.copy(alpha = 0.72f),
+                        0f to Color.Black.copy(alpha = 0.38f),
+                        0.45f to Color.Black.copy(alpha = 0.48f),
+                        1f to Color.Black.copy(alpha = 0.62f),
                     ),
                 ),
         )

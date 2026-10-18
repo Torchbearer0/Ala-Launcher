@@ -769,10 +769,14 @@ fun HomeRoute(
                 // The long-press menu is translucent like the AppPanel, so the screen
                 // behind it has to blur for the text to stay readable on it.
                 MenuBlur.anyOpen -> 10.dp
-                // The page on the left blurs the home screen behind it, but only while it is
-                // actually showing. Without this the page's widgets land straight on a sharp
-                // home screen and read as part of it rather than as somewhere else; the blur is
-                // what says "this is a different place".
+                // The page on the left, blurred while it is up.
+                //
+                // This branch was never written, so the page fell through to `0.dp` and the
+                // comment above it described a behaviour that did not exist: the page's widgets
+                // landed straight on a sharp home screen and read as part of it rather than as
+                // somewhere else. The same mechanism as the panels - it blurs the home content,
+                // not the wallpaper, because the wallpaper is not in this layer at all.
+                minusOneVisible -> 14.dp
                 else -> 0.dp
             },
             animationSpec = tween(OVERLAY_BLUR_MS),
