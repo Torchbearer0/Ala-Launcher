@@ -226,6 +226,9 @@ proving BACK works proves nothing about the gesture — test with
 - `ddf4aae` refactor: the placement model is Flow's - a list and a width, and nothing else
 - `f65446c` revert: the free-placement page, out entirely
 
+- `ccb6ca7` feat: rounded switches, sliders that glow, and a wave for an icon
+- `973149c` feat: free resizing is worth having again, because the space can be filled
+
 - `933adcf` fix: a long press on a widget was also a tap
 
 - `f1e059a` refactor: settings on true black, and the sections list given something to look at
@@ -380,4 +383,58 @@ Setting the default home again after it gets lost: `cmd package set-home-activit
 still show a chooser - check `cmd role get-role-holders android.app.role.HOME`
 and `cmd package resolve-activity --user 0 --brief -a android.intent.action.MAIN
 -c android.intent.category.HOME`, which should end with `isDefault=true`.
+
+
+## The page can be filled now (`973149c`)
+
+WidgetPageFill.firstGap mirrors FlowRow's line breaking to find the first hole wide enough
+for a widget, and the add button puts one there at exactly that size. Verified on device: a
+251dp widget in a 422dp row reports `163 dp free`, and the new one lands beside it at
+x 38..634 and x 653..1040 - same row, 8dp between.
+
+**Two bugs, and the second is the one to remember.**
+
+1. The gap loop only ran while a *following* entry was considered, so the **last line** never
+   reported one - and the last line is exactly what a resized widget leaves behind.
+2. `leftover = container - lineWidth` was 8dp too wide. A widget filling a gap still has to be
+   *placed* there, and placing costs the inter-item gap: 251 + 8 + 171 = 430 in a 422 row. The
+   page said 171 free, offered a 171dp widget, and could not lay it out. **The caption and the
+   arithmetic agreed with each other and were both wrong, so nothing that compared them caught
+   it** - and my hand-computed test expectations were off in the same direction, so 220 tests
+   passed it too. Fixed to `container - lineWidth - gapDp`.
+
+That is the third time now that the tests and the code have been wrong in the *same* direction
+and agreed with each other. They cannot both be the check. Only the device caught this one.
+
+- The caption sits **under** the list, not in it. A placeholder item would occupy the very room
+  it is describing and would stop later entries fitting where they used to.
+- Settings: the page is a switch now. Discover is gone from the enum - it never drew anything of
+  ours, it opened Google, and a launcher setting that launches another app is a redirect.
+
+## Visual changes (`ccb6ca7`)
+
+- Switch/checkbox are **drawn**, not Material's. Material3 1.3 took the shape parameters off
+  `Switch` and left the pill as the only option, so there is nothing to round without replacing
+  it. Off is grey with no glow and **no accent anywhere** - the old one kept a faintly cyan
+  border, so unticked switches were still slightly lit.
+- Slider: the lit half carries its own halo clipped to the filled width; the handle is a ball.
+  Material's slider is still underneath, invisible, for drag/accessibility/steps.
+- App icon: blue gradient background, two wave strokes, plus a **monochrome** layer for themed
+  icons on Android 13. All four resources confirmed present in the APK.
+
+## Swiping on this device - where things actually are
+
+The user has customised the **bottom** strip for left/right app swipes. Do not swipe there.
+The widget page opens only in the band **between the widget section and the favourites**:
+
+    gap y = (lowest widget bottom + first favourite top) / 2
+
+- Find the widget bottom from `AppWidgetHostView` bounds.
+- Find the first favourite top from a node with **x < 400** below that. The A-Z strip sits at
+  x >= 1037 and its letters will otherwise be mistaken for a favourite row and give a 30px
+  band that cannot be hit.
+- Swipe **<= 350ms**. At 500ms the background long-press fires instead and opens the context
+  menu (Edit layout / Add widget / Choose favorites / Ala Launcher settings).
+- The home screen takes ~10s to settle after widgets change, and uiautomator catches it
+  half-loaded. Dump three times with no input and only trust the last two if they agree.
 
