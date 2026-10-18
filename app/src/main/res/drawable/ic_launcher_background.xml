@@ -1,10 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The sea the wave sits on.
+
+  A gradient rather than a flat fill, because a flat fill makes the wave look like it is stuck on
+  top of a tile, and a gradient reads as depth behind it. It runs corner to corner rather than
+  top to bottom, so the darker end is up and to the left and the wave's crest catches the lighter
+  part of the sky - the same trick a photograph of the sea uses, where the horizon is higher on
+  one side than the other.
+
+  Kept dark at the top: a launcher icon sits against other icons, and a pale square up there would
+  read as a hole rather than as sky.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="@color/launcher_bg"
-        android:pathData="M0,0h108v108h-108z" />
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0" android:color="#FF04182E" />
+                <item android:offset="0.5" android:color="#FF0A3A63" />
+                <item android:offset="1" android:color="#FF11608F" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

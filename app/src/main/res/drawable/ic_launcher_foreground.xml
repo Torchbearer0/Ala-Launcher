@@ -1,13 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  A wave, and the swell behind it.
+
+  Two strokes rather than one, because a single line reads as a squiggle and two lines read as
+  water. The front wave is white and thick; the one behind is lighter blue, thinner and higher up,
+  which puts it further away - distance on a flat icon is only ever going to come from size and
+  contrast, so those are what carry it.
+
+  Each is a pair of quadratic curves, one arching up and one dipping down, which is enough to get
+  the rhythm of a swell without the fuss of a real sine. Round caps, because a wave has no corners
+  in it and a squared-off end is the thing that gives away that it was drawn rather than surfed.
+
+  Everything sits inside the middle 72 of the 108, which is the only part of an adaptive icon a
+  launcher is obliged to show - anything outside it is cropped by whichever mask the device uses,
+  so a crest that reaches the edge is a crest that some launchers cut off.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- The swell behind: higher up, thinner, and the colour of sky on water. -->
     <path
-        android:pathData="M32,30 L54,76 L76,30"
-        android:strokeColor="@color/launcher_fg"
-        android:strokeWidth="11"
+        android:pathData="M26,45 Q39,36 52,45 Q65,54 78,45"
+        android:strokeColor="#8FD6F2"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- The wave in front. -->
+    <path
+        android:pathData="M22,63 Q37,51 52,63 Q67,75 82,63"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="7"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="#00000000" />
