@@ -226,6 +226,9 @@ proving BACK works proves nothing about the gesture — test with
 - `ddf4aae` refactor: the placement model is Flow's - a list and a width, and nothing else
 - `f65446c` revert: the free-placement page, out entirely
 
+- `baa2c42` feat: a welcome on first use, a dotted wave, and the app panel follows your finger
+- `2833cc7` fix: the sliders were dead, and the ball sat in the middle at 0%
+
 - `ccb6ca7` feat: rounded switches, sliders that glow, and a wave for an icon
 - `973149c` feat: free resizing is worth having again, because the space can be filled
 
@@ -437,4 +440,50 @@ The widget page opens only in the band **between the widget section and the favo
   menu (Edit layout / Add widget / Choose favorites / Ala Launcher settings).
 - The home screen takes ~10s to settle after widgets change, and uiautomator catches it
   half-loaded. Dump three times with no input and only trust the last two if they agree.
+
+
+## NEVER draw a control over another one and expect them to agree (`2833cc7`)
+
+The slider regression is the most instructive bug in this project and the whole lesson is one
+sentence: **a Box lays its children out TopStart unless told otherwise, and a child that is not
+told to fill picks its own width.** Three things went wrong at once and none of them was visible
+in the source:
+
+- The custom track drew along the top of the box while Material's thumb drew on the centre line
+  below it. Looked like a plain line with a dot on a line of its own.
+- The Slider was not `fillMaxWidth`, so it laid out at its own width while the track beside it
+  spanned the row. Its gesture mapping measured a different rectangle from the one being looked
+  at, so touching the handle threw the value to wherever the finger landed.
+- The thumb slot's size is what Material maps the value onto, so a slot sized for the glow
+  instead of the ball quietly moved **both ends of every setting's range**.
+
+Fixed by not using Material's slider at all (~40 lines). The rule now: **when you draw your own
+track, you own the slider** - do not overlay somebody else's and hope the two agree.
+
+### How it was actually diagnosed
+
+By pixel sampling, not by reading the code: screenshot via `screencap -p` then base64 (never
+`> file`, it corrupts the PNG), and finding the ball as the **longest contiguous run of bright
+pixels per row**. That is what proved the ball was pinned dead centre at 0% - the giveaway the
+user spotted and I had not.
+
+- Beware: `{0},{1}` -f [int](/16)*16, ... is a PowerShell precedence trap. The cast binds
+  tighter than `,` so the format gets four args for three slots and prints hundreds of errors.
+  Parenthesise the whole expression, or assign to a variable first.
+
+## Verified on device since (`baa2c42`)
+
+| | evidence |
+|---|---|
+| Slider at 0% | ball at **x=98**, left end |
+| Slider drag right | 82%, ball x=952 |
+| Slider drag left | 5%, ball x=150 |
+| App panel follows finger | swipe x=140 -> panel x=264; swipe x=520 -> panel x=644 |
+| Welcome page 1 | Next at x 814..1004 y 2174..2290; wave = 5455 cyan px above headline |
+| Welcome page 2 | all 7 feature lines present |
+| Done | lands on home, splash gone |
+
+`welcome_seen` is currently **false** on the device, so the splash will appear once on next
+launch. Tapping Done sets it true. It was flipped by hand in the DataStore (one byte, 08 01 ->
+08 00, same length so no framing changes - still validate the file before pushing).
 
