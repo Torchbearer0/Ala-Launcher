@@ -226,6 +226,8 @@ proving BACK works proves nothing about the gesture — test with
 - `ddf4aae` refactor: the placement model is Flow's - a list and a width, and nothing else
 - `f65446c` revert: the free-placement page, out entirely
 
+- `378d16f` feat: a switch is a lamp, not a mechanism
+
 - `baa2c42` feat: a welcome on first use, a dotted wave, and the app panel follows your finger
 - `2833cc7` fix: the sliders were dead, and the ball sat in the middle at 0%
 
@@ -486,4 +488,46 @@ user spotted and I had not.
 `welcome_seen` is currently **false** on the device, so the splash will appear once on next
 launch. Tapping Done sets it true. It was flipped by hand in the DataStore (one byte, 08 01 ->
 08 00, same length so no framing changes - still validate the file before pushing).
+
+
+## The light must not escape its own box (`378d16f`)
+
+`GlowOrb` draws inside `Modifier.clipToBounds()`. That single line is the whole spill fix.
+
+Every previous version scaled a radial gradient past its own bounds via `graphicsLayer`
+`scaleX/scaleY` - which changes paint but not layout, so the glow painted freely over whatever
+was next to it. On a list of ticked rows each row's light landed on the rows above and below,
+and the fix everyone reaches for (make the halo smaller) only makes it less wrong.
+
+**Clip the box and the spill is impossible**, so row spacing stops having to be negotiated
+against the glow. Measured on the favourites list after the change:
+
+| row | above | inside | below |
+|---|---|---|---|
+| BitChord | 0 | 1210 | 0 |
+| Gmail | 0 | 1210 | 0 |
+| Flow | 0 | 1210 | 0 |
+
+Measure this the same way when a glow looks wrong again - count bright pixels in a band above,
+inside and below each row. It is the only way to tell a spill from a soft edge.
+
+### Palette
+
+`GlowAccent` is **white** (was cyan). On AMOLED the pixels are off when black, so white is
+the only colour that reads as the screen *on* rather than as paint on it. Dull when off, bright
+and blooming when on, no third state.
+
+### Two PowerShell traps that cost real time
+
+- **Never name a function `Measure`** - it collides with the `Measure-Object` alias and every
+  call silently becomes a cmdlet error. Cost me two full cycles.
+- ` = @()` then `[]` is an **array**, not a hashtable, so `ContainsKey` does
+  not exist. Use `@{}` for a keyed accumulator. Thousands of error lines, zero information.
+
+## Icon and splash (both need eyes on them)
+
+- Icon wave is now a real shape: crest line + variable-thickness body, 73 dots sized by distance
+  to the nearer edge. I **cannot see it** - please say if the crest reads.
+- Splash now lights bottom to top so the wave forms. `welcome_seen` is false on the device, so
+  it will appear once on next launch; one tap of Done clears it.
 
