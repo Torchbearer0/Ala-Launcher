@@ -24,14 +24,14 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <application
-        android:name=".VictoriaApp"
+        android:name=".AlaApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@style/Theme.VictoriaLauncher"
+        android:theme="@style/Theme.AlaLauncher"
         android:supportsRtl="true">
 
         <activity
@@ -41,7 +41,7 @@
             android:stateNotNeeded="true"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.VictoriaLauncher"
+            android:theme="@style/Theme.AlaLauncher"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
             <intent-filter>
@@ -60,7 +60,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.VictoriaLauncher" />
+            android:theme="@style/Theme.AlaLauncher" />
 
         <!-- The one component another app can reach, and the only way in is the system
              raising it on behalf of an app that asked for a shortcut to be pinned. It is
@@ -72,7 +72,7 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.VictoriaLauncher.PinShortcut">
+            android:theme="@style/Theme.AlaLauncher.PinShortcut">
             <intent-filter>
                 <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -80,7 +80,7 @@
         </activity>
 
         <service
-            android:name=".service.VictoriaAccessibilityService"
+            android:name=".service.AlaAccessibilityService"
             android:exported="true"
             android:label="Ala Launcher gestures"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -99,7 +99,7 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.VictoriaLauncher">
+            android:theme="@style/Theme.AlaLauncher">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
                 <category android:name="android.intent.category.DEFAULT" />

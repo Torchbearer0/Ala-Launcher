@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package dev.victorialauncher.widget
+package dev.alalauncher.widget
 
-import dev.victorialauncher.widget.ClockWidgetWeather.WeatherGlyph
-import dev.victorialauncher.widget.ClockWidgetWeather.glyphFor
+import dev.alalauncher.widget.ClockWidgetWeather.WeatherGlyph
+import dev.alalauncher.widget.ClockWidgetWeather.glyphFor
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

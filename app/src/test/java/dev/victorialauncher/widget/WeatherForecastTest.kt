@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package dev.victorialauncher.widget
+package dev.alalauncher.widget
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package dev.alalauncher.ui.theme
+
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.graphics.Typeface
+import androidx.compose.ui.text.font.FontFamily
+import java.io.File
+import dev.alalauncher.data.AppFont
+
+fun AppFont.toFontFamily(): FontFamily = when (this) {
+    AppFont.SYSTEM -> FontFamily.Default
+    AppFont.SANS_SERIF -> FontFamily.SansSerif
+    AppFont.SERIF -> FontFamily.Serif
+    AppFont.MONOSPACE -> FontFamily.Monospace
+    // Without the file this cannot be resolved here; callers that have it use fontFamilyOf.
+    AppFont.CUSTOM -> FontFamily.Default
+}
+
+/**
+ * The typeface to draw with, including one the user supplied.
+ *
+ * The file is loaded once per path rather than per text: Typeface.createFromFile parses the
+ * whole font, and the app list asks for this on every row. A file that will not parse falls
+ * back to the default rather than failing — a font picked months ago may since have gone.
+ */
+fun fontFamilyOf(font: AppFont, fontFile: String?): FontFamily {
+    if (font != AppFont.CUSTOM) return font.toFontFamily()
+    val path = fontFile ?: return FontFamily.Default
+    return customFontCache.getOrPut(path) {
+        runCatching { FontFamily(Typeface.createFromFile(File(path))) }.getOrDefault(FontFamily.Default)
+    }
+}
+
+private val customFontCache = mutableMapOf<String, FontFamily>()
+
+private val DarkColors = darkColorScheme(
+    primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF000000),
+    background = Color.Transparent,
+    surface = Color(0xFF1B2733),
+    onSurface = Color(0xFFE3E8EC),
+)
+
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF10707F),
+    background = Color.Transparent,
+    surface = Color(0xFFF3F6F8),
+    onSurface = Color(0xFF1B2733),
+)
+
+/**
+ * The scheme for a screen that is black whatever the system is set to.
+ *
+ * The settings screen draws its page in true black, and a black page needs light content on it.
+ * Left on the system scheme, a device in light mode handed it near-black text on that black -
+ * so the darker the page got, the less of it could be read. Fixing the page without fixing the
+ * content is how that happened.
+ *
+ * Derived from [DarkColors] rather than from whatever the system offered, because the point of
+ * an AMOLED screen is that its darkness is predictable. Material You would hand back a palette
+ * derived from the wallpaper, which is the one thing guaranteed not to be black.
+ *
+ * The container slots are filled in rather than left to defaults: on this scheme they default to
+ * greys lighter than the page, and any control that reaches for one - a dialog, a menu, a
+ * dropdown - would float over the black as a slab of the old design.
+ */
+internal fun amoledColorScheme(): ColorScheme = DarkColors.copy(
+    surface = Color.Black,
+    background = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0B0B0E),
+    surfaceContainer = Color(0xFF101216),
+    surfaceContainerHigh = Color(0xFF16181C),
+    surfaceContainerHighest = Color(0xFF1C1F24),
+    surfaceVariant = Color(0xFF1C1F24),
+    onSurfaceVariant = Color(0xFFC2C8CE),
+    outline = Color(0xFF3A4048),
+    outlineVariant = Color(0x14FFFFFF),
+    scrim = Color.Black,
+)
+
+/**
+ * Corners, so a menu is as round as the things it opens over.
+ *
+ * Material gives a menu its extraSmall shape, which is 4dp — against rows and cards drawn here
+ * at 18 to 22dp it read as a different app's menu. Everything the app draws by hand sits in
+ * that range, so the scale is set to meet it rather than each menu being told separately.
+ */
+private val AlaShapes = Shapes(
+    extraSmall = RoundedCornerShape(16.dp),
+    small = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(20.dp),
+)
+
+@Composable
+fun AlaTheme(
+    font: AppFont = AppFont.SYSTEM,
+    fontFile: String? = null,
+    content: @Composable () -> Unit,
+) {
+    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    // On Android 12+, use the system's Material You palette (derived from the user's
+    // wallpaper) so Settings/dialogs feel like stock Android instead of a bespoke skin;
+    // background stays transparent regardless, since the home screen relies on it to let
+    // the real wallpaper show through.
+    val baseColors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        if (darkTheme) DarkColors else LightColors
+    }
+    val colors = baseColors.copy(background = Color.Transparent)
+    val baseTypography = MaterialTheme.typography
+    val fontFamily = fontFamilyOf(font, fontFile)
+    val typography = baseTypography.copy(
+        bodyLarge = baseTypography.bodyLarge.copy(fontFamily = fontFamily),
+        bodyMedium = baseTypography.bodyMedium.copy(fontFamily = fontFamily),
+        bodySmall = baseTypography.bodySmall.copy(fontFamily = fontFamily),
+        titleLarge = baseTypography.titleLarge.copy(fontFamily = fontFamily),
+        titleMedium = baseTypography.titleMedium.copy(fontFamily = fontFamily),
+        titleSmall = baseTypography.titleSmall.copy(fontFamily = fontFamily),
+        labelLarge = baseTypography.labelLarge.copy(fontFamily = fontFamily),
+    )
+    MaterialTheme(
+        colorScheme = colors,
+        typography = typography,
+        shapes = AlaShapes,
+        content = content,
+    )
+}
+
+/**
+ * The shadow to put behind the launcher's own text, or null for none.
+ *
+ * Only behind light text: a shadow under dark text on a pale wallpaper muddies the letters
+ * instead of separating them. The setting asks for contrast, and this is where it is decided
+ * whether a shadow would actually gain any.
+ */
+@Composable
+internal fun launcherTextShadow(enabled: Boolean, textColor: Color, strength: Int = DEFAULT_SHADOW_STRENGTH): Shadow? {
+    if (!enabled) return null
+    if (textColor.luminance() < 0.5f) return null
+    // One number moving darkness and spread together. Five is what it always was, so the
+    // default reads exactly as before; either side of it is darker and wider, or lighter and
+    // tighter, which is the one thing anyone adjusting it is after.
+    val k = strength.coerceIn(SHADOW_STRENGTH_RANGE) / DEFAULT_SHADOW_STRENGTH.toFloat()
+    return Shadow(
+        color = Color.Black.copy(alpha = (0.55f * k).coerceIn(0.1f, 0.95f)),
+        offset = Offset(0f, 1f),
+        blurRadius = 4f * k,
+    )
+}
+
+const val DEFAULT_SHADOW_STRENGTH = 5
+val SHADOW_STRENGTH_RANGE = 1..10

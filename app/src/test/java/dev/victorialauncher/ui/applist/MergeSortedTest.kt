@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package dev.victorialauncher.ui.applist
+package dev.alalauncher.ui.applist
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -8,7 +8,7 @@ import org.junit.Test
  * How a letter's apps and its folders go into one order.
  *
  * Only reachable from a JVM test because it takes plain values. [buildAppListModel] itself
- * cannot be built here — [dev.victorialauncher.data.AppInfo] holds a ComponentName, which is a
+ * cannot be built here — [dev.alalauncher.data.AppInfo] holds a ComponentName, which is a
  * framework stub off-device — so this is where the ordering is pinned instead, and the model is
  * checked on a phone.
  */

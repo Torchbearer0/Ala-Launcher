@@ -15,7 +15,7 @@ val keystoreProperties = Properties().apply {
 val hasSigningConfig = keystoreProperties.getProperty("storeFile") != null
 
 android {
-    namespace = "dev.victorialauncher"
+    namespace = "dev.alalauncher"
     compileSdk = 35
 
     lint {
@@ -26,11 +26,11 @@ android {
     }
 
     defaultConfig {
-        // Deliberately still dev.victorialauncher. The applicationId is this app's identity to
+        // Deliberately still dev.alalauncher. The applicationId is this app's identity to
         // Android, not its name: changing it would be a different app, and everything the user
         // has already granted or accumulated lives under this one — the notification listener
         // permission, the allocated widget ids, the DataStore, and any backup taken of it.
-        applicationId = "dev.victorialauncher"
+        applicationId = "dev.alalauncher"
         minSdk = 26
         targetSdk = 35
         // Kept ahead of the last upstream build rather than reset, so installing over the
