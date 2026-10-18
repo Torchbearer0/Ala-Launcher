@@ -893,3 +893,34 @@ PowerShell `>` redirection corrupts the base64 and it fails to parse - that is t
 `run-as ... cp files/datastore/... /sdcard/...` failed outright on this device; the app's
 `/sdcard` write did not happen, so check the file exists before reading it.
 
+### The bug I introduced fixing the reorder: `rememberUpdatedState` inside a drag
+
+The first fix (keying `pointerInput` on the key instead of the index) stopped the drag dying after
+one swap - but made dragging *worse*: the user reported a row that "scrolls infinitely in the same
+row". Camera was the row they hit it on.
+
+Cause: I read the working list through `rememberUpdatedState`, which is refreshed **during
+recomposition**. The drag handler wrote the new order and then, before any recomposition, read the
+**old** one back - computed `from` against a list that no longer existed, and rebuilt the new order
+out of that stale one, discarding every swap already made. Symptom: a big leap on the first swap,
+then thrash in place for the rest of the drag.
+
+Fix: hold `val orderState = remember(keys) { mutableStateOf(keys) }` and read `orderState.value`
+**inside** the drag coroutine. That is a snapshot read, so it is always current. Read it **once**
+per event - reading twice lets the second read see a write the first did not.
+
+Also clamped `dragOffset -= (to - from) * rowPx` to one row: a fast flick delivers a whole row of
+travel in one event, and an unclamped correction overshoots into the opposite direction.
+
+**`rememberUpdatedState` is for bridging a composition boundary. It is the wrong tool for a gesture
+that has to see its own writes.** The two look interchangeable and are not.
+
+Verified on device: Camera down two slots and back, both directions, landing exactly where it
+started. Order left as the user had it.
+
+### NOTE: the user's favourites mode was FREQUENT, which is why step 1 explained everything
+
+They have since switched to "The list you keep". The divergence diagnosis above still stands and
+still needs fixing - but with MANUAL selected, the Manage Favourites screen now edits the list the
+home screen actually draws, so the two should agree until step 1 is done.
+

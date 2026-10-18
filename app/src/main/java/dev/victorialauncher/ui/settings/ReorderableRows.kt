@@ -20,7 +20,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,10 +57,24 @@ fun ReorderableRows(
     val view = LocalView.current
     val rowPx = with(LocalDensity.current) { REORDER_ROW_HEIGHT.toPx() }
 
-    // Keyed on the stored list, so a key added or removed elsewhere resets the working copy.
-    // While a drag is in flight this is what gets drawn, since nothing is written until the
-    // finger lifts.
-    var order by remember(keys) { mutableStateOf(keys) }
+    // The working copy, as a plain state object rather than a `by` delegate, and read through
+    // `.value` **inside** the drag handler.
+    //
+    // Keyed on the stored list, so a key added or removed elsewhere resets it. Nothing is written
+    // back until the finger lifts; while a drag is in flight this is what gets drawn.
+    //
+    // Reading it directly matters, and the reason is the worst bug this component has had. It used
+    // to be read through `rememberUpdatedState`, which is refreshed **during recomposition** - so
+    // between the handler's first write and the next recomposition it handed back the *old* list.
+    // The handler then computed the dragged row's position against a list that no longer existed,
+    // and built the new order out of that stale one, discarding every swap it had already made. The
+    // symptom was a row that would leap several places on the first swap and then thrash in place
+    // for the rest of the drag, scrolling against itself without ever settling.
+    //
+    // A `MutableState.value` read inside the drag coroutine is a snapshot read, so it is always the
+    // value as of now. `rememberUpdatedState` is the wrong tool here: it exists to bridge a
+    // *composition* boundary, and this is a gesture that has to see its own writes immediately.
+    val orderState = remember(keys) { mutableStateOf(keys) }
 
     /**
      * Which row is being dragged, by key rather than by position.
@@ -73,12 +86,8 @@ fun ReorderableRows(
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
-    // Read through these rather than captured. The drag handler has to survive a reorder, so it
-    // cannot be restarted by one, so it cannot close over the state it is about to change.
-    val orderNow = rememberUpdatedState(order)
-
     Column(modifier = Modifier.fillMaxWidth()) {
-        order.forEachIndexed { index, itemKey ->
+        orderState.value.forEachIndexed { index, itemKey ->
             val dragging = draggingKey == itemKey
             // Each row keeps its own node. Without this Compose reuses them by position, so after
             // a swap the handle that was on the dragged row is now on whichever row moved into
@@ -124,7 +133,7 @@ fun ReorderableRows(
                                         draggingKey = itemKey
                                     },
                                     onDragEnd = {
-                                        if (draggingKey != null) onReorder(orderNow.value)
+                                        if (draggingKey != null) onReorder(orderState.value)
                                         draggingKey = null
                                         dragOffset = 0f
                                     },
@@ -134,7 +143,10 @@ fun ReorderableRows(
                                     },
                                 ) { change, amount ->
                                     change.consume()
-                                    val current = orderNow.value
+                                    // Read once, and every decision below is made against this
+                                    // same snapshot. Reading it twice would let the second read
+                                    // see a write the first one did not.
+                                    val current = orderState.value
                                     // Looked up every time rather than remembered, because this
                                     // is the only thing that knows where the row is *now*.
                                     val from = current.indexOf(itemKey)
@@ -144,10 +156,15 @@ fun ReorderableRows(
                                     if (shift == 0) return@detectDragGestures
                                     val to = (from + shift).coerceIn(0, current.lastIndex)
                                     if (to == from) return@detectDragGestures
-                                    order = current.toMutableList().apply { add(to, removeAt(from)) }
+                                    orderState.value =
+                                        current.toMutableList().apply { add(to, removeAt(from)) }
                                     // The row has moved under the finger, so the offset it
-                                    // is drawn at has to come back by as much.
-                                    dragOffset -= (to - from) * rowPx
+                                    // is drawn at has to come back by as much. Clamped, because a
+                                    // fast flick can deliver a whole row's worth of travel in one
+                                    // event and an unclamped correction overshoots into the opposite
+                                    // direction - which is what made a hard drag walk the row up
+                                    // and back down forever.
+                                    dragOffset -= ((to - from) * rowPx).coerceIn(-rowPx, rowPx)
                                     HapticUtil.tick(view, true)
                                 }
                             },
