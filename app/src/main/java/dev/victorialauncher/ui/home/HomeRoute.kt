@@ -202,8 +202,15 @@ fun HomeRoute(
     /** Locks an open private space or asks for a locked one to be opened, off this thread. */
     onTogglePrivateSpace: () -> Unit,
     onNavigate: (String) -> Unit,
-    /** Opens the picker with the result marked as belonging to the page on the left. */
-    onAddWidgetToMinusOne: () -> Unit,
+    /**
+     * Opens the picker for the page on the left.
+     *
+     * Carries where the new widget is meant to go and how big it should be, worked out from the
+     * room left on the page. Passing them through rather than letting the picker decide is what
+     * makes a resized widget's empty space fillable: the widget arrives already in the gap and
+     * already sized to it.
+     */
+    onAddWidgetToMinusOne: (insertIndex: Int?, widthDp: Int, heightDp: Int) -> Unit,
 ) {
     val context = LocalContext.current
     // Read here because the models are built off the main thread, where a string resource
@@ -955,13 +962,7 @@ fun HomeRoute(
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
                 minusOneEnabled = minusOne.mode != MinusOneMode.OFF,
-                onOpenMinusOne = {
-                    minusOneVisible = true
-                    // Discover has nothing of its own to draw - it is the Google app, not a feed
-                    // of ours - so reaching the page is the whole gesture and the app opens with
-                    // it. A button first made it a dead end with a prompt.
-                    if (minusOne.mode == MinusOneMode.DISCOVER) openGoogleApp(context)
-                },
+                onOpenMinusOne = { minusOneVisible = true },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -1486,28 +1487,6 @@ fun HomeRoute(
 
 private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
 
-/**
- * The Google app, by package first and by its search action second. False when neither exists.
- *
- * Lives here rather than on the page because the gesture that reaches the page is what opens
- * Google: the page has no content of its own to draw, so reaching it and opening the app are one
- * action rather than a prompt followed by a second one.
- */
-private fun openGoogleApp(context: android.content.Context): Boolean {
-    val pm = context.packageManager
-    val byPackage = runCatching { pm.getLaunchIntentForPackage(GOOGLE_SEARCH_PACKAGE) }.getOrNull()
-    val byAction = Intent(GOOGLE_SEARCH_ACTION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    val intent = byPackage ?: byAction.takeIf { it.resolveActivity(pm) != null } ?: return false
-    return try {
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        true
-    } catch (_: Exception) {
-        false
-    }
-}
-
-private const val GOOGLE_SEARCH_PACKAGE = "com.google.android.googlequicksearchbox"
-private const val GOOGLE_SEARCH_ACTION = "com.google.android.gsf.search.action.GOOGLE_SEARCH"
 
 /** Display and behavior settings the home destination reads, grouped so they travel as one. */
 @Immutable

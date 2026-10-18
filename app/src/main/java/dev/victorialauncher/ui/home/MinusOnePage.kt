@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.victorialauncher.R
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.MINUS_ONE_NEW_WIDGET_HEIGHT_DP
 import dev.victorialauncher.data.MinusOneEntry
 import dev.victorialauncher.data.MinusOneMode
 import dev.victorialauncher.data.MinusOnePage
@@ -112,7 +113,16 @@ fun MinusOnePage(
     page: MinusOnePage,
     appsByKey: Map<String, AppInfo>,
     contentColor: Color,
-    onAddWidget: () -> Unit,
+    /**
+     * Asks for a widget to be added.
+     *
+     * [insertIndex] is where in the list it should go, or null to put it on the end. The page works
+     * both out from the room that is actually left over, so a widget arrives already the right
+     * size and already in the right place rather than somewhere the user then has to drag it out
+     * of. That is the whole reason free resizing is worth having: the space a narrower widget
+     * gives up has to be fillable, or giving it up only makes the page worse.
+     */
+    onAddWidget: (insertIndex: Int?, widthDp: Int, heightDp: Int) -> Unit,
     onResize: (index: Int, widthDp: Int, heightDp: Int) -> Unit,
     onRemove: (index: Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
@@ -126,7 +136,6 @@ fun MinusOnePage(
 ) {
     when (page.mode) {
         MinusOneMode.OFF -> Box(modifier)
-        MinusOneMode.DISCOVER -> Box(modifier)
         MinusOneMode.WIDGETS -> WidgetList(
             entries = page.entries,
             appsByKey = appsByKey,
@@ -152,7 +161,7 @@ private fun WidgetList(
     entries: List<MinusOneEntry>,
     appsByKey: Map<String, AppInfo>,
     contentColor: Color,
-    onAddWidget: () -> Unit,
+    onAddWidget: (insertIndex: Int?, widthDp: Int, heightDp: Int) -> Unit,
     onResize: (index: Int, widthDp: Int, heightDp: Int) -> Unit,
     onRemove: (index: Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
@@ -164,6 +173,14 @@ private fun WidgetList(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+
+    /**
+     * How wide the row is, so the room left on it can be worked out.
+     *
+     * This is the one measurement the gap arithmetic needs, and it is read once per layout rather
+     * than per entry: the row is the same width whatever is in it.
+     */
+    var rowWidthDp by remember { mutableIntStateOf(0) }
 
     /**
      * Where each entry is on screen, in window coordinates.
@@ -202,6 +219,34 @@ private fun WidgetList(
         onEditingChange(to)
     }
 
+    /**
+     * Where the next widget would go, and how big it should be to fill the space.
+     *
+     * Recomputed on every composition rather than remembered, because it depends on the whole list
+     * and the row's width: resize one widget and the answer changes, so anything cached would be
+     * answering about the page as it used to be.
+     */
+    val freeSpace = WidgetPageFill.firstGap(
+        entries = entries.map { WidgetPageFill.Slot(it.widthDp, it.heightDp) },
+        containerDp = rowWidthDp,
+        gapDp = ENTRY_LINE_GAP_DP,
+        minWidthDp = MIN_FILLABLE_WIDTH_DP,
+    )
+
+    /**
+     * Asks for a widget. Fills the room if there is any, and otherwise goes on the end - which is
+     * what makes the button work on an empty page and on a page that is exactly full, rather than
+     * only in the one case where a gap happens to exist.
+     */
+    fun addWidget() {
+        val gap = freeSpace
+        onAddWidget(
+            gap?.insertIndex,
+            gap?.widthDp ?: 0,
+            gap?.heightDp ?: MINUS_ONE_NEW_WIDGET_HEIGHT_DP,
+        )
+    }
+
     Box(modifier.fillMaxSize()) {
         // Its own surface, so the page is a place rather than widgets floating over the home
         // screen it was reached from. Graded rather than flat: content sits under the top, and a
@@ -227,12 +272,14 @@ private fun WidgetList(
             Spacer(Modifier.height(20.dp))
 
             if (entries.isEmpty()) {
-                EmptyStackHint(contentColor, onAddWidget, onOpenSettings)
+                EmptyStackHint(contentColor, ::addWidget, onOpenSettings)
                 Spacer(Modifier.height(20.dp))
             }
 
             FlowRow(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { rowWidthDp = with(density) { it.width.toDp().value.toInt() } },
                 horizontalArrangement = Arrangement.spacedBy(ENTRY_GAP_DP.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -261,6 +308,22 @@ private fun WidgetList(
                 }
             }
 
+            // The space a resized widget gave up, said out loud.
+            //
+            // It is drawn under the list rather than inside it on purpose. Putting a placeholder in
+            // the row would take up the very room it is describing, and anything after it would no
+            // longer fit where it used to - so the page would change shape just by having a gap
+            // shown. A caption has no such effect, and it answers the question the gap raises:
+            // what is this space for?
+            if (freeSpace != null) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    stringResource(R.string.minus_one_free_space, freeSpace.widthDp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor.copy(alpha = 0.75f),
+                )
+            }
+
             if (entries.isNotEmpty()) Spacer(Modifier.height(96.dp))
         }
 
@@ -274,8 +337,14 @@ private fun WidgetList(
                 .size(FAB_SIZE_DP.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
-                .clickable(onClick = onAddWidget)
-                .semantics { contentDescription = ADD_WIDGET_LABEL },
+                .clickable(onClick = ::addWidget)
+                .semantics {
+                    contentDescription = if (freeSpace != null) {
+                        ADD_WIDGET_LABEL + ", " + freeSpace.widthDp + " dp free"
+                    } else {
+                        ADD_WIDGET_LABEL
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text(

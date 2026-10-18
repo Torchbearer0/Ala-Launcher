@@ -122,7 +122,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.victorialauncher.ui.theme.SHADOW_STRENGTH_RANGE
 import dev.victorialauncher.ui.theme.GlowAccent
-import dev.victorialauncher.ui.theme.GlowAccent
 import dev.victorialauncher.ui.theme.GlowingSegment
 import dev.victorialauncher.ui.theme.GlowingSegmentTrack
 import dev.victorialauncher.ui.theme.GlowingSlider
@@ -1521,47 +1520,29 @@ private fun TextColorRow(
  * quietly disagree about who wrote the original.
  */
 
+/**
+ * The page on the left, as a switch.
+ *
+ * It was three choices - off, Discover, widgets - and Discover was never really a mode. It never
+ * drew anything of ours; it opened the Google app, which is a button that launches another app,
+ * and a launcher setting that launches another app is a redirect, not a setting. A launcher has no
+ * internet access, so there was no feed to show either. What is left is one thing that is either
+ * there or not, which is what a switch is for.
+ */
 @Composable
 private fun MinusOneModeRow(selected: MinusOneMode, onSelect: (MinusOneMode) -> Unit) {
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(stringResource(R.string.minus_one_title), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            stringResource(R.string.minus_one_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        SwitchRowWithDetail(
+            label = stringResource(R.string.minus_one_title),
+            detail = stringResource(R.string.minus_one_body),
+            checked = selected == MinusOneMode.WIDGETS,
+            onCheckedChange = { enabled ->
+                onSelect(if (enabled) MinusOneMode.WIDGETS else MinusOneMode.OFF)
+            },
         )
-        // The same lit segmented control as every other choice in the app, so a choice here
-        // looks like a choice everywhere else.
-        GlowingSegmentTrack(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-            MinusOneMode.entries.forEach { mode ->
-                GlowingSegment(
-                    selected = selected == mode,
-                    onClick = { onSelect(mode) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        stringResource(mode.labelRes()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selected == mode) {
-                            GlowAccent
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-                        },
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                    )
-                }
-            }
-        }
     }
 }
 
-private fun MinusOneMode.labelRes(): Int = when (this) {
-    MinusOneMode.OFF -> R.string.minus_one_mode_off
-    MinusOneMode.DISCOVER -> R.string.minus_one_mode_discover
-    MinusOneMode.WIDGETS -> R.string.minus_one_mode_widgets
-}
 private const val UPSTREAM_URL = "github.com/adelmonte/victoria-launcher"
 private const val UPSTREAM_AUTHOR = "adelmonte"
 private const val UPSTREAM_AUTHOR_URL = "github.com/adelmonte"

@@ -12,8 +12,6 @@ import org.json.JSONObject
  */
 enum class MinusOneMode {
     OFF,
-    /** Opens the search app's Discover feed. Never embeds it. */
-    DISCOVER,
 
     /** One line of widgets and app shortcuts, each with a size of its own. */
     WIDGETS,

@@ -602,19 +602,29 @@ fun VictoriaNavHost(
     // Which surface asked for the widget. The picker is one screen and returns one id, and the
     // two callers mean different things by it: the home screen's slot takes it as another page
     // in its own pager, the page on the left takes it as another entry in its line.
-    var minusOneWidgetPicker by remember { mutableStateOf(false) }
+    /**
+     * Where the next widget asked for from the page on the left should go, and how big it should
+     * be. Null until the page asks for one.
+     *
+     * Held here rather than passed through the picker because the picker is a separate activity:
+     * it hands back a widget id and nothing else, so the intent behind the request has to be
+     * waiting when it comes back.
+     */
+    var minusOneAdd by remember { mutableStateOf<WidgetAddRequest?>(null) }
     val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val toMinusOne = minusOneWidgetPicker
-        minusOneWidgetPicker = false
+        val add = minusOneAdd
+        minusOneAdd = null
         if (result.resultCode == RESULT_OK) {
             val id = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
             if (id != -1) scope.launch {
-                if (toMinusOne) {
+                if (add != null) {
                     val page = app.prefs.minusOne.first()
-                    app.prefs.setMinusOne(
-                        page.mode,
-                        page.entries + MinusOneEntry.Widget(id, MINUS_ONE_NEW_WIDGET_HEIGHT_DP),
-                    )
+                    val entries = page.entries.toMutableList()
+                    // A null index means "on the end". Anything else names the gap it fills, and
+                    // inserting there is what leaves the entries after it exactly where they were.
+                    val at = add.insertIndex?.coerceIn(0, entries.size) ?: entries.size
+                    entries.add(at, MinusOneEntry.Widget(id, add.heightDp, add.widthDp))
+                    app.prefs.setMinusOne(page.mode, entries)
                 } else {
                     app.prefs.addWidgetId(id)
                 }
@@ -628,11 +638,11 @@ fun VictoriaNavHost(
                 // Carries which app asked, so the picker can put that app's widgets at the top
                 // rather than opening on the whole device catalogue every time.
                 //
-                // Deliberately does not clear minusOneWidgetPicker: onAddWidgetToMinusOne sets
-                // that flag and then comes through here, so clearing it in this handler undid
-                // it a line later and every widget added from the left-hand page landed on the
-                // home screen's pager instead. The flag is cleared by whoever reads it — the
-                // picker's result callback, which is the one place that acts on it.
+                // Deliberately does not clear minusOneAdd: onAddWidgetToMinusOne records where the
+                // widget is meant to go and then comes through here, so clearing it in this
+                // handler undid it a line later and every widget added from the left-hand page
+                // landed on the home screen's pager instead. It is cleared by whoever reads it -
+                // the picker's result callback, which is the one place that acts on it.
                 widgetPickerLauncher.launch(
                     Intent(context, WidgetPickerActivity::class.java).apply {
                         if (focus != null) putExtra(EXTRA_FOCUS_PACKAGE, focus)
@@ -753,10 +763,11 @@ fun VictoriaNavHost(
                 // The picker is one screen and returns one widget id. Flagging where the result
                 // belongs is the only difference between adding to the home screen's slot and
                 // adding to the page on the left.
-                onAddWidgetToMinusOne = {
-                    // Set the flag first, then go through the same launch the home screen's own
-                    // add button uses. Setting the flag alone opened nothing.
-                    minusOneWidgetPicker = true
+                onAddWidgetToMinusOne = { insertIndex, widthDp, heightDp ->
+                    // Record where it goes first, then go through the same launch the home
+                    // screen's own add button uses. Setting that aside and launching nothing was
+                    // what the first version did, and the button did nothing at all.
+                    minusOneAdd = WidgetAddRequest(insertIndex, widthDp, heightDp)
                     widgetActions.onAddWidget(null)
                 },
             )
@@ -1230,3 +1241,14 @@ fun VictoriaNavHost(
  * from one and the rows from the other. Published together, there is no such moment.
  */
 private data class AppsAndSpace(val privateSpace: PrivateSpace, val apps: List<AppInfo>)
+
+/**
+ * Where a widget asked for from the page on the left should be put, and how big.
+ *
+ * [insertIndex] names the gap it fills, or is null to put it on the end of the page. [widthDp] of 0
+ * means full width, which is the same thing the entries themselves store.
+ *
+ * Computed by the page rather than here, because only the page knows how wide the row is and what
+ * has been resized into what - the picker is handed a result, not a layout.
+ */
+private data class WidgetAddRequest(val insertIndex: Int?, val widthDp: Int, val heightDp: Int)

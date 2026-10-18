@@ -380,13 +380,7 @@
     <string name="widget_clock_weather_waiting">Waiting for a weather app</string>
     <string name="minus_one_title">Page to the left</string>
     <string name="minus_one_body">Swipe right through the gap between the widget and your apps to open it.</string>
-    <string name="minus_one_mode_off">Off</string>
-    <string name="minus_one_mode_discover">Discover</string>
-    <string name="minus_one_mode_widgets">Widgets and shortcuts</string>
-    <string name="minus_one_discover_title">Discover</string>
-    <string name="minus_one_discover_body">Opens the Google app, which is where the feed already is. Ala has no internet access, so the news is fetched by Google and never by the launcher.</string>
-    <string name="minus_one_discover_open">Open Google</string>
-    <string name="minus_one_discover_missing">No Google app found on this device, so there is no feed to open.</string>
+    <string name="minus_one_free_space">%1$d dp free — tap + to fill it</string>
     <string name="minus_one_empty_title">Nothing on this page yet</string>
     <string name="minus_one_empty_body">Add a widget, or a shortcut to an app. Each one can be resized by dragging the line under it.</string>
     <string name="minus_one_resize">Resize</string>
