@@ -811,3 +811,85 @@ Removed the rounded tile behind each section glyph, kept the radial glow. Verifi
 map: smooth `,` to `.` falloff around the glyph, no plateau and no edge. A box behind every mark
 said "these are buttons" on a list that is only ever a list.
 
+---
+
+## 2026-10-18 - FAVOURITES: root cause found, fix NOT started
+
+**This is the important open item. Do not start it without reading this section first.**
+
+### The bug
+
+Two independent resolution paths read the same stored list, and in one mode one of them ignores it
+entirely.
+
+**Home screen** - `VictoriaNavHost.kt` `favoriteEntries`, around line 419:
+- `favoritesSource == FREQUENT`: built from `launchCounts`, filtered by `frequentExcluded`,
+  `take(frequentCount)`. **The stored `favoriteKeys` is never consulted.**
+- `MANUAL`: `favoriteKeys.mapNotNull { ... }` - silently drops any token that is not in
+  `appsByKey`, and any folder not in `foldersById`. No record is kept of what was dropped.
+
+**Manage Favourites screen** - `ManageFavoritesScreen.kt` lines 71-90:
+- `favoriteKeys.toSet()`, then `favoriteKeys.filterNot(conceal)` where `conceal` also hides
+  private-space entries via `privateSpace.concealsStored(key, resolves)`.
+- **Always the stored list, in both modes.**
+
+### Why it looks like three separate bugs
+
+- **"No relation to what's on my home screen"** - in `FREQUENT` mode the two lists are unrelated by
+  construction. Home shows most-used; settings shows the manual list.
+- **"Favourites selection is broken"** - ticking in Manage Favourites writes to the manual list,
+  which the home screen does not read in `FREQUENT` mode. The write succeeds and changes nothing.
+- **"Reordering is buggy"** - same reason: the drag writes an order nothing displays.
+
+`favoritesReorderable` and `favoritesEditable` in `HomeRoute.kt` (~lines 867, 878, 1150) are
+already gated on `favoritesSource == MANUAL`, so the home screen knows about this - the settings
+screen does not.
+
+### Also wrong regardless of mode
+
+Even in `MANUAL`, the two sides filter differently: home uses bare `mapNotNull`, settings uses
+`conceal`. Anything dropped by one is kept by the other. And `restoreConcealed` has to put concealed
+keys back on every reorder write, which is exactly the fragile path - the comment at
+`ManageFavoritesScreen.kt` line 80 says as much: hiding by one rule and restoring by a narrower one
+loses keys.
+
+### The fix (designed, not written)
+
+1. **One resolver, one file.** A single `resolveFavorites(keys, appsByKey, foldersById, privateSpace,
+   mode, ...)` returning `{ visible: List<Entry>, unresolved: List<String> }`. Both the home screen
+   and Manage Favourites call it. No second copy.
+2. **Manage Favourites must say what it edits.** In `FREQUENT` mode it should not offer a manual
+   list at all - it should point at the "kept out of most used" screen, which is the only thing in
+   that mode that affects the home screen. Or the screen becomes read-only with that explanation.
+3. **Unresolved keys must be visible, not silent.** An app in a locked private space is *temporarily*
+   missing; an uninstalled one is gone. Show both, differently, and never let a reorder write back a
+   list that dropped them.
+4. **Reorder writes the full resolved list, once, on release** - and must round-trip: resolve, write,
+   re-resolve, and assert nothing was lost. A cheap property test over resolve/write/resolve would
+   have caught the concealed-keys class of bug outright.
+
+### Then: Niagara-style home screen editing
+
+The user wants to pick and order favourites from the home screen itself, not through settings.
+That is a real feature: long-press or drag on the home favourites block, a reorder mode there, and
+an "add/remove" sheet over the app list. It needs (1)-(4) above to be correct first, otherwise the
+home screen is editing a list two other screens disagree with.
+
+### Why it was not started
+
+Out of budget for a rewrite of the model behind their entire home screen plus a new editing mode.
+Shipping an unverified refactor of the favourites data path would have been worse than reporting
+the diagnosis. The user was told this plainly.
+
+### How to read the DataStore safely (read-only)
+
+`run-as` + `base64`, **captured into a variable**, never redirected to a file:
+
+    adb -s <dev> shell base64 /sdcard/prefs.bin
+    $b64 = ((adb -s <dev> shell base64 /sdcard/prefs.bin) -join '') -replace '\s',''
+    $bytes = [Convert]::FromBase64String($b64)
+
+PowerShell `>` redirection corrupts the base64 and it fails to parse - that is the known trap. Also:
+`run-as ... cp files/datastore/... /sdcard/...` failed outright on this device; the app's
+`/sdcard` write did not happen, so check the file exists before reading it.
+
