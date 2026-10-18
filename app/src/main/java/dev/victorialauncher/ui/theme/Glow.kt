@@ -192,6 +192,25 @@ fun GlowOrb(
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // A faint bloom under the beads, the same idea as the selected chip's and deliberately
+        // much weaker - a third of its peak, and inside the control's own footprint rather than
+        // spreading past it.
+        //
+        // The beads are points; this is what makes them read as *emitting* rather than as being
+        // drawn. It stays inside the footprint so `clipToBounds()` still has nothing to do, and it
+        // is scaled by `lit` so an unlit control is a dark dot with nothing around it.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        0.00f to GlowAccent.copy(alpha = 0.17f * lit),
+                        0.40f to GlowAccent.copy(alpha = 0.10f * lit),
+                        0.72f to GlowAccent.copy(alpha = 0.035f * lit),
+                        1.00f to Color.Transparent,
+                    ),
+                ),
+        )
         Canvas(Modifier.fillMaxSize()) {
             val c = Offset(size.width / 2f, size.height / 2f)
             // Half of the control's own footprint. **Everything is measured against this**, so

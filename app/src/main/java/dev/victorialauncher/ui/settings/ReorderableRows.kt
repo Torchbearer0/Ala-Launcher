@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.victorialauncher.ui.settings
 
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -124,48 +126,76 @@ fun ReorderableRows(
                             // order however far the finger had actually travelled. Keyed on the
                             // key, the handler starts once and keeps going until the finger lifts.
                             .pointerInput(itemKey) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        // The row does not move until the finger does, so a tick
-                                        // is the only confirmation that the grab took.
-                                        HapticUtil.tick(view, true)
-                                        dragOffset = 0f
-                                        draggingKey = itemKey
-                                    },
-                                    onDragEnd = {
-                                        if (draggingKey != null) onReorder(orderState.value)
-                                        draggingKey = null
-                                        dragOffset = 0f
-                                    },
-                                    onDragCancel = {
-                                        draggingKey = null
-                                        dragOffset = 0f
-                                    },
-                                ) { change, amount ->
-                                    change.consume()
-                                    // Read once, and every decision below is made against this
-                                    // same snapshot. Reading it twice would let the second read
-                                    // see a write the first one did not.
-                                    val current = orderState.value
-                                    // Looked up every time rather than remembered, because this
-                                    // is the only thing that knows where the row is *now*.
-                                    val from = current.indexOf(itemKey)
-                                    if (from < 0) return@detectDragGestures
-                                    dragOffset += amount.y
-                                    val shift = (dragOffset / rowPx).roundToInt()
-                                    if (shift == 0) return@detectDragGestures
-                                    val to = (from + shift).coerceIn(0, current.lastIndex)
-                                    if (to == from) return@detectDragGestures
-                                    orderState.value =
-                                        current.toMutableList().apply { add(to, removeAt(from)) }
-                                    // The row has moved under the finger, so the offset it
-                                    // is drawn at has to come back by as much. Clamped, because a
-                                    // fast flick can deliver a whole row's worth of travel in one
-                                    // event and an unclamped correction overshoots into the opposite
-                                    // direction - which is what made a hard drag walk the row up
-                                    // and back down forever.
-                                    dragOffset -= ((to - from) * rowPx).coerceIn(-rowPx, rowPx)
+                                // **Claim the press immediately**, before the parent LazyColumn
+                                // can.
+                                //
+                                // This list is the body of a `LazyColumn`, so a vertical drag on a
+                                // row and a scroll of the list are literally the same gesture, and
+                                // `detectDragGestures` does not claim anything until the touch has
+                                // travelled a whole slop. In that window the LazyColumn wins the
+                                // race and starts scrolling - the list slides out from under the
+                                // finger mid-drag, which reads as a row scrolling endlessly against
+                                // itself. Reordering still worked; it just looked broken.
+                                //
+                                // So the down is consumed on the first event, which stops the parent
+                                // ever seeing a drag it could claim. Same reasoning as the slider's
+                                // own pointer input, and for the same reason.
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    down.consume()
+
+                                    // The row does not move until the finger does, so a tick
+                                    // is the only confirmation that the grab took.
                                     HapticUtil.tick(view, true)
+                                    dragOffset = 0f
+                                    draggingKey = itemKey
+
+                                    // Absolute positions, never `positionChange()`: a change this
+                                    // block has consumed reports no movement, and reading deltas off
+                                    // a consumed change stops the drag dead.
+                                    var lastY = down.position.y
+
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change =
+                                            event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) break
+                                        change.consume()
+
+                                        val y = change.position.y
+                                        val dy = y - lastY
+                                        lastY = y
+
+                                        // Read once, and every decision below is made against
+                                        // this same snapshot. Reading it twice would let the
+                                        // second read see a write the first one did not.
+                                        val current = orderState.value
+                                        // Looked up every time rather than remembered, because
+                                        // this is the only thing that knows where the row is *now*.
+                                        val from = current.indexOf(itemKey)
+                                        if (from < 0) continue
+                                        dragOffset += dy
+                                        val shift = (dragOffset / rowPx).roundToInt()
+                                        if (shift == 0) continue
+                                        val to = (from + shift).coerceIn(0, current.lastIndex)
+                                        if (to == from) continue
+                                        orderState.value = current.toMutableList().apply {
+                                            add(to, removeAt(from))
+                                        }
+                                        // The row has moved under the finger, so the offset it
+                                        // is drawn at has to come back by as much. Clamped, because
+                                        // a fast flick can deliver a whole row's worth of travel in
+                                        // one event and an unclamped correction overshoots into the
+                                        // opposite direction - which is what made a hard drag walk
+                                        // the row up and back down forever.
+                                        dragOffset -= ((to - from) * rowPx).coerceIn(-rowPx, rowPx)
+                                        HapticUtil.tick(view, true)
+                                    }
+
+                                    // Committed on release, once, against the list as it now is.
+                                    if (draggingKey != null) onReorder(orderState.value)
+                                    draggingKey = null
+                                    dragOffset = 0f
                                 }
                             },
                     )
