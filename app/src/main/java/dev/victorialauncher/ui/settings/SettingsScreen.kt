@@ -11,10 +11,10 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.clickable
@@ -1881,17 +1881,24 @@ private fun EdgeSideRow(selected: EdgeSide, onSelect: (EdgeSide) -> Unit) {
 /**
  * One option in a row of them - icon pack, font, text colour, icon shape.
  *
- * Selected it is **lit from the inside out**: a white pill with black writing on it and a white
- * glow around it, so it reads as the one that is switched on rather than as a coloured one among
- * grey ones. That is the Sailfish trick - the thing you picked is the light source, and the ink on
- * it is the absence of light.
+ * **There is no chip.** No pill, no surface, no background, in either state. A row of options is a
+ * list of words, and drawing a box around one of them says "this is a button, and the others are
+ * not" - which is a different claim from "you picked this one", and a louder one.
  *
- * Black on white rather than white on cyan was not a palette tidy-up. A tinted pill with dark
- * writing is still a coloured pill, and on an AMOLED panel a coloured background is just paint;
- * white is the only one that reads as being switched on. It also retires the last cyan on the
- * settings screen without needing a second accent for it.
+ * Unselected, the word is simply the ordinary text colour.
  *
- * Unselected it is unchanged: a barely-there fill and the ordinary text colour.
+ * Selected, the word **glows**: white, with a wide soft white bloom around it. The glow is the
+ * whole of the selection affordance, so it has to do the work a fill used to do - which is why the
+ * text is drawn brighter than everything else on the page rather than merely tinted. It also means
+ * the eye is drawn to the lit thing, not to a shape.
+ *
+ * This is the same inversion the rest of the design language uses. On an AMOLED panel a background
+ * colour is paint and only lit pixels read as *on*; the orb, the slider and the splash all get
+ * their meaning from light rather than from fill, and a chip is the last control still doing it the
+ * other way.
+ *
+ * The blur is a real text shadow rather than a drawn halo behind the label, so the light follows
+ * the shape of the glyphs - strokes, counters and all - instead of sitting in a rectangle.
  */
 internal fun FilledChip(
     label: String,
@@ -1899,36 +1906,40 @@ internal fun FilledChip(
     fontFamily: FontFamily? = null,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(50)
-    val bg = if (selected) GlowAccent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val fg = if (selected) Color.Black else MaterialTheme.colorScheme.onSurface
-
-    Surface(
-        shape = shape,
-        color = bg,
-        modifier = Modifier
-            .then(
-                if (selected) {
-                    // A real shadow rather than a drawn halo, so the glow follows the pill's own
-                    // shape. A circular gradient behind a wide short pill would read as a blob.
-                    Modifier.shadow(
-                        elevation = 10.dp,
-                        shape = shape,
-                        ambientColor = GlowAccent,
-                        spotColor = GlowAccent,
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .clickable(onClick = onClick),
-    ) {
-        Text(
-            label,
-            color = fg,
-            style = MaterialTheme.typography.labelLarge,
-            fontFamily = fontFamily,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    val base = MaterialTheme.typography.labelLarge
+    val glowPx = with(LocalDensity.current) { CHIP_GLOW_BLUR.toPx() }
+    val style = if (selected) {
+        base.copy(
+            color = GlowAccent,
+            shadow = Shadow(
+                color = GlowAccent.copy(alpha = 0.42f),
+                offset = Offset.Zero,
+                blurRadius = glowPx,
+            ),
         )
+    } else {
+        base.copy(color = MaterialTheme.colorScheme.onSurface)
     }
+
+    Text(
+        label,
+        style = style,
+        fontFamily = fontFamily,
+        modifier = Modifier
+            // Rounded so the press ripple is a pill. The ripple is transient and never sits still,
+            // so it can afford a shape; the resting state deliberately does not have one.
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            // Still padded, so the tap targets of neighbouring words do not touch and the rows
+            // keep the same rhythm they had when each word sat in a pill.
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    )
 }
+
+/**
+ * How far the light around a selected word spreads.
+ *
+ * Wider than the glyph is tall on purpose: a tight shadow just thickens the strokes and reads as
+ * bold text, which is not the same thing at all as lit text.
+ */
+private val CHIP_GLOW_BLUR = 14.dp

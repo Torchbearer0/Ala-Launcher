@@ -630,3 +630,71 @@ scrolled: `cyan=0, any-saturated-hue=0` of 641520 samples. The page is monochrom
 
 - `refreshWidgetBounds` in `HomeScreen.kt` measures only the first home widget.
 
+---
+
+## 2026-10-18 - Particle glow, pill-less chips, and a hash that lied
+
+### `0x7FFFFFF` is not `0x7FFFFFFF`
+
+The particle field drew nothing. Every dot was missing except one or two lucky specks, and no
+amount of reading the algorithm explained it. Logging the values settled it in one shot:
+
+    radius=40.5 grid=9 half=4 pitch=9.0 lit=1.0 s0=12.199282 s20=1.6226618 s40=6.010944
+
+A hash in 0..1 returning 12. The mask was `0x7FFFFFFF` but the **divisor** was written
+`0x7FFFFFF` - seven hex digits, 134217727 instead of 2147483647. Every value came out up to 16x
+too big, so `scatter(cell, 3) > chance` rejected ~94% of cells and the survivors were pure luck.
+
+It type-checks, it looks like a mask, and it throws nothing. **A wrong constant inside a hash does
+not fail loudly, it just quietly filters.**
+
+This is the fourth time the simulation and the code "agreed" and both were wrong, and the first
+time the disagreement was a *character*. My PowerShell model used the correct literal; the Kotlin
+had one digit missing; I compared the model's *output* to the screen and never re-read the
+constant. **A model of the code is not the code. When a model predicts something the device
+disagrees with, diff them token by token before changing either.**
+
+### What worked for a draw loop that renders nothing
+
+1. Confirm the rest of the file is live (the slider's 4dp/24px change *was* visible) - otherwise
+   you are debugging a stale build, not geometry.
+2. Re-derive the algorithm in a script and check how many items it produces.
+3. **Still nothing -> log the actual values from inside the draw lambda.** One `Log.i` beat
+   twenty minutes of reading. Do this sooner; the cost is one build.
+4. `for (gx in -half until grid - half)` with `half = grid / 2` is right for odd `grid` - 9 cells
+   per side, `cell` in 0..80. Worth checking before assuming the loop is at fault.
+
+### Particle glow, not rings
+
+`particleGlow` in `Glow.kt` is a `DrawScope` extension shared by the toggle and the slider
+handle. Square lattice, every cell jittered off its own position, nothing past 0.95R.
+
+- inside 0.34R: always drawn, full size - the heavy bloom hard against the core
+- 0.34R-0.72R: size and probability both falling
+- 0.72R-0.95R: minute and mostly absent, so the edge is a **ragged spray that runs out of dots**
+  rather than a circle that stops
+
+`scatter(index, salt)` is a fixed integer hash, **not `kotlin.random.Random`**. A `Random` inside
+the draw lambda re-rolls on every repaint and the control shimmers like TV static. Scattered is
+not the same as different-every-time, and a toggle that flickers is worse than one with a slightly
+regular halo.
+
+### Chips have no shape any more
+
+`FilledChip` is now a bare `Text`. Unselected it is the ordinary text colour with nothing behind
+it; selected it is white with a 14dp `TextStyle.shadow` bloom. No surface, no pill, no fill, in
+either state - a box around one word says "this is a button and the others are not", which is a
+different and louder claim than "you picked this one".
+
+The blur is a **text shadow**, not a halo drawn behind the label, so the light follows the glyphs -
+strokes and counters - instead of sitting in a rectangle. It has to be wide: a tight shadow just
+thickens the strokes and reads as bold text, which is not lit text.
+
+The ripple keeps a `RoundedCornerShape(50)` clip - it is transient and never at rest.
+
+### Measured
+
+- Toggle: 34dp box, core 0.18R, particle field to 0.95R, ragged edge confirmed in the pixel map.
+- Slider: track **4.2dp**, handle core **24px**, particles running through the handle and out past
+  it (filled, not ringed).
+

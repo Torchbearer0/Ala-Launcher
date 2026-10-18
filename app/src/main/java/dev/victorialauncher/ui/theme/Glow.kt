@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,10 +57,8 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlin.math.PI
-import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
  * One accent, and the light it throws.
@@ -163,11 +162,8 @@ private val ORB_SIZE = 34.dp
 fun GlowOrb(
     active: Boolean,
     modifier: Modifier = Modifier,
-    /**
-     * How much texture the glow carries. Two rings for a toggle; one for a slider handle, where a
-     * full ring around a small dot reads as a focus indicator rather than as light.
-     */
-    texture: Int = 2,
+    /** How many cells across the particle lattice is, one side. Nine is coarse enough to read. */
+    grid: Int = 9,
     onClick: (() -> Unit)? = null,
     role: Role? = null,
     onValueChange: ((Boolean) -> Unit)? = null,
@@ -206,38 +202,8 @@ fun GlowOrb(
             // matrix inside the footprint means the clip never has to do anything.
             val R = size.minDimension / 2f
 
-            // The matrix, and it is still a matrix. Only the dots got smaller.
-            //
-            // The first attempt was blocky because the dots were big enough to touch: at 0.095 of
-            // the radius they were beads, and a ring of beads is a ring. Half that, with more of
-            // them so the ring still reads as continuous light, and the same glow is now made of
-            // points instead of lumps.
-            //
-            // Radii, count and alpha per ring, outer first. Off they are still drawn - dimly -
-            // because an unlit LED has a matrix around it too, and a control you cannot find is
-            // worse than one that is plainly off.
-            val ringRadius = floatArrayOf(0.84f, 0.60f)
-            val ringDot = floatArrayOf(0.030f, 0.042f)
-            val ringCount = intArrayOf(16, 10)
-            val ringAlpha = floatArrayOf(0.34f, 0.60f)
-
-            val rings = minOf(texture, ringRadius.size)
-            for (ring in 0 until rings) {
-                val alpha = (0.12f + 0.88f * lit) * ringAlpha[ring]
-                // Half a step between the rings, so the dots do not line up into spokes.
-                val offset = if (ring == 0) 0f else 0.5f
-                val rr = R * ringRadius[ring]
-                val d = R * ringDot[ring]
-                val count = ringCount[ring]
-                for (i in 0 until count) {
-                    val a = ((i + offset) / count) * 2f * PI.toFloat()
-                    drawCircle(
-                        color = GlowAccent.copy(alpha = alpha),
-                        radius = d,
-                        center = Offset(c.x + rr * cos(a), c.y + rr * sin(a)),
-                    )
-                }
-            }
+            // The glow is a field of dots, not rings - see particleGlow below.
+            particleGlow(center = c, radius = R, lit = lit, grid = grid)
 
             // The core, and small. A point of light is a point: a big solid disc in the middle is
             // what turned the lamp into a button.
@@ -257,6 +223,104 @@ fun GlowOrb(
             }
         }
     }
+}
+
+/**
+ * The glow: a lattice of dots, jittered, dense and coarse at the middle and fine and sparse at the
+ * edge.
+ *
+ * **Not rings.** Rings are the wrong shape for light. A ring has one radius, so it has one
+ * brightness, so the eye reads a *circle drawn by someone* - and two of them read as a target.
+ * What light around a point actually looks like is a field: the same material everywhere, thinning
+ * out as it goes, with no edge you could put a finger on.
+ *
+ * The structure is a square lattice, so the dots have something to be a *matrix* of - that grid is
+ * what stops it reading as noise, and it is the same idea the icon's dotted wave is built from.
+ * Every cell is then jittered off its own position, so the grid never shows through as a grid
+ * while the pattern still stays identical every frame.
+ *
+ * The falloff is three bands, and all three are continuous:
+ *  - inside 0.34R: always drawn, at full size - a heavy bright bloom hard against the core.
+ *  - 0.34R to 0.72R: size and probability both fall steadily.
+ *  - 0.72R to 0.95R: minute and mostly absent, so the outer edge is a **ragged spray that simply
+ *    runs out of dots** rather than a perfect circle that stops. This is the part that matters: a
+ *    clean circular boundary is what made every earlier version look like a *thing*. A spray has
+ *    no boundary, and a thing with no boundary reads as light.
+ *
+ * Nothing goes past 0.95R, so the clip never bites and the ragged edge is ragged for the reason it
+ * was designed to be rather than because it got cut off.
+ *
+ * Off, every band is scaled right down but still drawn: an unlit LED has a matrix around it too,
+ * and a control you cannot find is worse than one that is plainly off.
+ */
+private fun DrawScope.particleGlow(
+    center: Offset,
+    radius: Float,
+    lit: Float,
+    grid: Int,
+    /** Largest dot, as a fraction of [radius]. */
+    maxDot: Float = 0.058f,
+    /** Smallest dot, as a fraction of [radius]. */
+    minDot: Float = 0.015f,
+) {
+    val half = grid / 2
+    val pitch = 2f * radius / grid
+    val glow = 0.10f + 0.90f * lit
+
+    for (gy in -half until grid - half) {
+        for (gx in -half until grid - half) {
+            val cell = (gx + half) * grid + (gy + half)
+            // Two independent offsets per cell, from the same stable sequence.
+            val jx = (scatter(cell, 1) - 0.5f) * pitch * 0.9f
+            val jy = (scatter(cell, 2) - 0.5f) * pitch * 0.9f
+
+            val px = center.x + gx * pitch + jx
+            val py = center.y + gy * pitch + jy
+            val d = hypot(px - center.x, py - center.y) / radius
+            if (d > 0.95f) continue
+
+            // How likely this cell is to hold a dot at all. Full inside the core's own
+            // neighbourhood, thinning to roughly one cell in ten at the edge.
+            val chance = when {
+                d <= 0.34f -> 1f
+                d <= 0.72f -> 1f - 0.52f * ((d - 0.34f) / 0.38f)
+                else -> 0.48f - 0.36f * ((d - 0.72f) / 0.23f)
+            }
+            if (scatter(cell, 3) > chance) continue
+
+            // Size follows the same falloff, squared, so the middle stays chunky and the last
+            // fifth of the radius is genuinely minute rather than merely smaller.
+            val t = d * d
+            val dot = radius * (maxDot + (minDot - maxDot) * t)
+            val alpha = glow * (1f - 0.72f * t)
+
+            drawCircle(
+                color = GlowAccent.copy(alpha = alpha),
+                radius = dot,
+                center = Offset(px, py),
+            )
+        }
+    }
+}
+
+/**
+ * A stable pseudo-random number in 0..1 for one index.
+ *
+ * Deliberately not [kotlin.random.Random]. A `Random` drawn inside the draw lambda comes out
+ * different on every frame and repaint, and the control shimmers like television static. The spray
+ * has to be *scattered*, which is not the same thing as being *different every time* - and a
+ * toggle that flickers is worse than a toggle with a slightly regular halo.
+ */
+private fun scatter(index: Int, salt: Int): Float {
+    var h = index * 0x45d9f3b + salt * 0x27d4eb2d
+    h = h xor (h shr 15)
+    h *= 0x2545f491
+    h = h xor (h shr 13)
+    // Eight hex digits. `0x7FFFFFF` is seven - 134217727, not 2147483647 - and dividing by that
+    // returns numbers up to 16, which silently threw away every particle but the very luckiest few
+    // instead of failing. It type-checks, it looks like a mask, and it does not error; the only
+    // thing that catches it is looking at what the function actually returns.
+    return ((h and 0x7FFFFFFF).toFloat()) / 0x7FFFFFFF.toFloat()
 }
 
 /** A switch: one lamp. Grey and dark when off, a lit orb when on. */
@@ -403,36 +467,63 @@ fun GlowingSlider(
                 .background(if (enabled) GlowAccent else OffInk),
         )
 
-        // The handle: an orb, at one end of the travel or the other and nowhere in between.
+        // The handle: a bright core sitting inside a cloud of particles, at one end of the travel
+        // or the other and nowhere in between.
         Box(
             Modifier
                 .offset { IntOffset((travel * fraction).roundToInt(), 0) }
                 .size(SLIDER_THUMB_SIZE)
                 .clipToBounds(),
-            contentAlignment = Alignment.Center,
         ) {
-            // Always lit, even when the slider is disabled: a handle that goes dark reads as a
-            // slider that is broken rather than one that cannot be moved.
-            GlowOrb(active = true, texture = 1)
+            Canvas(Modifier.fillMaxSize()) {
+                val c = Offset(size.width / 2f, size.height / 2f)
+                val R = size.minDimension / 2f
+
+                // Filled, not ringed. A ring around a small dot reads as a focus indicator; the
+                // particles here run right through the handle and out to its edge, so the whole
+                // thing is lit rather than outlined. The coarser dot size over the smaller box is
+                // deliberate - at the toggle's ratio the particles on a 30 dp handle are too fine
+                // to read as anything at all.
+                particleGlow(
+                    center = c,
+                    radius = R,
+                    lit = 1f,
+                    grid = 7,
+                    maxDot = 0.085f,
+                    minDot = 0.022f,
+                )
+
+                // Always lit, even when the slider is disabled: a handle that goes dark reads as a
+                // slider that is broken rather than one that cannot be moved.
+                drawCircle(color = GlowAccent, radius = R * SLIDER_THUMB_CORE, center = c)
+            }
         }
     }
 }
 
 /**
- * The handle's footprint. It has to be bigger than the core so the matrix has somewhere to be,
- * but not so much bigger that the handle reads as a block beside the line it sits on.
+ * The handle's footprint: the box the particle cloud is measured against, not the size of the
+ * handle. The bright part is [SLIDER_THUMB_CORE] of this; the rest is light falling off.
  */
 private val SLIDER_THUMB_SIZE = 30.dp
 
 /**
- * Three dp. It was six, and at six the filled half stopped reading as a line with a light on it
- * and started reading as a bar being dragged along a channel. Two read as a hairline rather than
- * as a control. Three is a line you can see and aim at.
- *
- * The ends are squared rather than semicircular: with `CircleShape` a three dp box gets round
- * ends, and it is the ends that make a line read as a capsule rather than as a line.
+ * The bright part of the handle, as a fraction of the footprint's half-width - so about 25 px
+ * across on this panel, rather than a fixed dp, which would be a different physical size on
+ * every screen density.
  */
-private val SLIDER_TRACK_HEIGHT = 3.dp
+private const val SLIDER_THUMB_CORE = 0.35f
+
+/**
+ * Four dp. It was six, which stopped reading as a line with a light on it and started reading as a
+ * bar in a channel; then three, which was right for the shape but too thin to feel like something
+ * you put your thumb on. Four is the point where the line is still a line but the control has some
+ * substance under the finger.
+ *
+ * The ends are squared rather than semicircular: round ends on a short thick line are what make it
+ * read as a capsule rather than as a line.
+ */
+private val SLIDER_TRACK_HEIGHT = 4.dp
 
 private val SLIDER_ROW_HEIGHT = 40.dp
 
