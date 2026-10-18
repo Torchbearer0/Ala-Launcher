@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.victorialauncher.R
+import dev.victorialauncher.ui.common.BlurredWallpaper
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.MINUS_ONE_NEW_WIDGET_HEIGHT_DP
 import dev.victorialauncher.data.MinusOneEntry
@@ -248,17 +249,24 @@ private fun WidgetList(
     }
 
     Box(modifier.fillMaxSize()) {
-        // Its own surface, so the page is a place rather than widgets floating over the home
-        // screen it was reached from. Graded rather than flat: content sits under the top, and a
-        // flat wash leaves the middle of the stack floating.
+        // The blurred wallpaper, painted by us rather than left to the window behind: there was
+        // nothing in the composition to blur before this, so the page had nothing but a flat wash.
+        // It is what makes the page a pane of frosted glass rather than a sheet laid over it.
+        BlurredWallpaper(modifier = Modifier.fillMaxSize())
+
+        // On top of it, a scrim - but a much lighter one than it used to carry. The old values
+        // (0.55 to 0.72 of black over a raw wallpaper) were chosen to make text readable against a
+        // sharp photograph. With the photograph already blurred there is much less contrast to fight,
+        // and at the old alphas the blur behind it was invisible anyway - which is why it looked
+        // like no blur at all.
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.55f),
-                        0.45f to Color.Black.copy(alpha = 0.62f),
-                        1f to Color.Black.copy(alpha = 0.72f),
+                        0f to Color.Black.copy(alpha = 0.34f),
+                        0.45f to Color.Black.copy(alpha = 0.46f),
+                        1f to Color.Black.copy(alpha = 0.62f),
                     ),
                 ),
         )

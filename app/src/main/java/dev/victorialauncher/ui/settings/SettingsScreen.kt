@@ -981,17 +981,21 @@ fun SettingsScreen(
     Box(Modifier.fillMaxSize()) {
     // The page colour, painted here rather than by the Scaffold so the light below sits on it.
     Box(Modifier.fillMaxSize().background(pageBackground))
-    // One soft light above the list, so pure black is not dead flat. Sailfish does this with the
-    // whole screen; on AMOLED it is the difference between a black rectangle and something lit.
-    // Alpha is tiny on purpose - enough to see if you look for it, not enough to lift the
-    // pixels off their power saving. Where the marks sit, so it lights what it is behind.
+    // One soft light above the list, so pure black is not dead flat.
+    //
+    // **Much fainter than it was, on purpose.** At 0.085 this measured 20,20,20 at the top-left
+    // falling to 8,8,8 across the screen - which on an OLED are all *lit* pixels, and in daylight
+    // it read as a grey page rather than a black one. The point of an AMOLED black settings screen
+    // is that those pixels are off, so a wash over it is the one thing that cannot earn its place.
+    // What is left is only enough to stop the top of the screen being dead flat; the cards' own
+    // top-edge highlight is what gives the page its structure.
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        SettingsTone.accent.copy(alpha = 0.085f),
+                        SettingsTone.accent.copy(alpha = 0.022f),
                         Color.Transparent,
                     ),
                     radius = with(density) { 560.dp.toPx() },

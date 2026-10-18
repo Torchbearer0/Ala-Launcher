@@ -192,21 +192,26 @@ fun GlowOrb(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        // A faint bloom under the beads, the same idea as the selected chip's and deliberately
-        // much weaker - a third of its peak, and inside the control's own footprint rather than
-        // spreading past it.
+        // A soft bloom under the beads - the same glow the selected chip gets, and
+        // deliberately matched to it rather than guessed at.
         //
         // The beads are points; this is what makes them read as *emitting* rather than as being
-        // drawn. It stays inside the footprint so `clipToBounds()` still has nothing to do, and it
-        // is scaled by `lit` so an unlit control is a dark dot with nothing around it.
+        // drawn. The first version sat at 0.17 peak and measured ~34 against the settings page's
+        // card - invisible in practice, because it had been sized against the chip's *peak*
+        // brightness, which is hidden inside the glyphs and never actually seen. The numbers
+        // that describe the chip are its mid-ramp ones, around 85-95, so that is what these aim
+        // at: about 90 at 0.4 of the way out, falling to nothing at the edge.
+        //
+        // It stays inside the control's own footprint so `clipToBounds()` still has nothing to
+        // do, and it is scaled by `lit` so an unlit control is a dark dot with nothing around it.
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        0.00f to GlowAccent.copy(alpha = 0.17f * lit),
-                        0.40f to GlowAccent.copy(alpha = 0.10f * lit),
-                        0.72f to GlowAccent.copy(alpha = 0.035f * lit),
+                        0.00f to GlowAccent.copy(alpha = 0.50f * lit),
+                        0.40f to GlowAccent.copy(alpha = 0.32f * lit),
+                        0.70f to GlowAccent.copy(alpha = 0.16f * lit),
                         1.00f to Color.Transparent,
                     ),
                 ),
