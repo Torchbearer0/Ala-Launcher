@@ -44,7 +44,9 @@ import android.widget.Toast
 import dev.victorialauncher.data.IconShape
 import dev.victorialauncher.data.MINUS_ONE_NEW_WIDGET_HEIGHT_DP
 import dev.victorialauncher.data.MinusOneEntry
+import dev.victorialauncher.data.MinusOneMode
 import dev.victorialauncher.data.MinusOnePage
+import kotlinx.coroutines.flow.first
 import dev.victorialauncher.data.AppFont
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.EntryKind
@@ -597,10 +599,26 @@ fun VictoriaNavHost(
         pendingIconTarget = null
     }
 
+    // Which surface asked for the widget. The picker is one screen and returns one id, and the
+    // two callers mean different things by it: the home screen's slot takes it as another page
+    // in its own pager, the page on the left takes it as another entry in its line.
+    var minusOneWidgetPicker by remember { mutableStateOf(false) }
     val widgetPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val toMinusOne = minusOneWidgetPicker
+        minusOneWidgetPicker = false
         if (result.resultCode == RESULT_OK) {
             val id = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
-            if (id != -1) scope.launch { app.prefs.addWidgetId(id) }
+            if (id != -1) scope.launch {
+                if (toMinusOne) {
+                    val page = app.prefs.minusOne.first()
+                    app.prefs.setMinusOne(
+                        page.mode,
+                        page.entries + MinusOneEntry.Widget(id, MINUS_ONE_NEW_WIDGET_HEIGHT_DP),
+                    )
+                } else {
+                    app.prefs.addWidgetId(id)
+                }
+            }
         }
     }
 
@@ -732,6 +750,15 @@ fun VictoriaNavHost(
                     }
                 },
                 onNavigate = { route -> navController.navigate(route) },
+                // The picker is one screen and returns one widget id. Flagging where the result
+                // belongs is the only difference between adding to the home screen's slot and
+                // adding to the page on the left.
+                onAddWidgetToMinusOne = {
+                    // Set the flag first, then go through the same launch the home screen's own
+                    // add button uses. Setting the flag alone opened nothing.
+                    minusOneWidgetPicker = true
+                    widgetActions.onAddWidget(null)
+                },
             )
         }
 
@@ -978,6 +1005,18 @@ fun VictoriaNavHost(
                 frequentExcludedVisible = favoritesSource == FavoritesSource.FREQUENT,
                 onOpenFrequentExcluded = { navController.navigate("settings/frequentexcluded") },
                 onOpenFavorites = { navController.navigate("favorites") },
+                minusOneMode = minusOne.mode,
+                onSetMinusOneMode = { mode ->
+                    scope.launch {
+                        // Only turning it off drops what was on it. Changing between the two
+                        // modes that both show something would otherwise silently throw away a
+                        // stack the user had built.
+                        app.prefs.setMinusOne(
+                            mode,
+                            if (mode == MinusOneMode.OFF) emptyList() else minusOne.entries,
+                        )
+                    }
+                },
                 onOpenNotificationSettings = {
                     context.startActivity(
                         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)

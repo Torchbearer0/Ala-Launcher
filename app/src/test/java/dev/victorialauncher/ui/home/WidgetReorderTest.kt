@@ -8,52 +8,12 @@ import org.junit.Test
 /**
  * Where a held widget lands when the finger is somewhere on the page.
  *
- * This is the whole of arranging, and it is deliberately this small. Flow Launcher's widget model
- * (`WidgetModel` in `com.app.flowlauncher`, read out of Flow 40.1.6) stores an ordered list and
- * one size per entry — no coordinates, no page, no cell. Everything the user sees when a widget
- * moves follows from the list reordering: the neighbours are not told to move, they are simply
- * no longer in those positions.
+ * The arithmetic itself lives in [WidgetReorder] in the main source set, because the page uses
+ * it; these are the cases that pin it down.
  *
  * So there is nothing here about collision, snapping or empty space, because this model cannot
  * be in a state where those mean anything.
  */
-object WidgetReorder {
-
-    /**
-     * The index a held entry should take, given where the finger is.
-     *
-     * Counted from the neighbours' centres rather than from a fixed distance: a drag is a
-     * continuous thing and the list has variable-height entries, so "one step per N dp" is
-     * either twitchy on short entries or sluggish on tall ones. The finger is simply over
-     * whatever it is over.
-     *
-     * The held entry is lifted out of the count first. Counting itself would mean every drag
-     * moved two places rather than one.
-     *
-     * An entry whose position is not known yet sorts to the end, so a drag that begins before
-     * the list has finished laying out cannot throw the entry to the top of the page.
-     */
-    fun targetIndex(held: Int, centreY: (Int) -> Float?, fingerY: Float, lastIndex: Int): Int {
-        if (lastIndex < 1) return held
-        val above = (0..lastIndex).count { it != held && (centreY(it) ?: Float.MAX_VALUE) < fingerY }
-        return above.coerceIn(0, lastIndex)
-    }
-
-    /**
-     * The list with one entry moved.
-     *
-     * A move rather than a swap, which reads the same for a single entry but does not corrupt
-     * the list when the finger passes back and forth over the same neighbour repeatedly: a
-     * swap would undo itself the moment the finger came back, and a drag that oscillates would
-     * leave the widget wherever the last sample happened to land rather than where it was
-     * released.
-     */
-    fun <T> move(list: List<T>, from: Int, to: Int): List<T> {
-        if (from !in list.indices || to !in list.indices || from == to) return list
-        return list.toMutableList().apply { add(to, removeAt(from)) }
-    }
-}
-
 class WidgetReorderTest {
 
     /** Four entries stacked evenly, 200px apart, each 100px tall. Centres at 50, 250, 450, 650. */

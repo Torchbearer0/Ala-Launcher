@@ -250,6 +250,9 @@ fun HomeScreen(
     onFavoritesBoundsChanged: (topPx: Float, bottomPx: Float) -> Unit,
     contentColor: Color,
     showFavoriteLabels: Boolean,
+    /** True when the page to the left has been given something to show. */
+    minusOneEnabled: Boolean,
+    onOpenMinusOne: () -> Unit,
     alignment: HomeAlignment,
     iconSide: IconSide,
     editMode: Boolean,
@@ -455,6 +458,37 @@ fun HomeScreen(
     // of asking for another one.
     var favBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
+    /**
+     * Where the widget is, in window pixels, measured the same way as the favorites.
+     *
+     * Only needed to tell the widget apart from the empty space around it. It used to be the
+     * other way round - measuring the single gap between the widget and the first row - which
+     * made the gesture depend on that one band being big enough to aim at.
+     */
+    var widgetBounds by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+
+    /** How far a swipe has to travel before it is opening the page rather than being a nudge. */
+    val openThreshold = with(LocalDensity.current) { 56.dp.toPx() }
+
+    /** Whether a touch at this height landed on something drawn rather than on space. */
+    fun isOnContent(y: Float): Boolean {
+        widgetBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        favBounds?.let { (top, bottom) -> if (y in top..bottom) return true }
+        return false
+    }
+
+    /** Recomputed after the widget reports, against the list as it is now rather than as it was. */
+    fun refreshWidgetBounds() {
+        val widget = displayItems.firstOrNull { it is HomeItem.Widget } ?: return
+        val key = measureKey(widget)
+        val top = itemTops[key] ?: return
+        val bottom = top + (itemHeights[key] ?: return)
+        val current = widgetBounds
+        if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
+            widgetBounds = top to bottom
+        }
+    }
+
     /** Recomputed after each row reports, against the list as it is now rather than as it was. */
     fun refreshFavBounds() {
         val first = displayItems.firstOrNull { it !is HomeItem.Widget } ?: return
@@ -467,12 +501,15 @@ fun HomeScreen(
         if (current == null || abs(current.first - top) > 0.5f || abs(current.second - bottom) > 0.5f) {
             favBounds = top to bottom
         }
+        refreshWidgetBounds()
     }
 
     LaunchedEffect(favBounds) {
         val (top, bottom) = favBounds ?: return@LaunchedEffect
         onFavoritesBoundsChanged(top, bottom)
     }
+
+    LaunchedEffect(widgetBounds) { refreshWidgetBounds() }
 
     val peekPullPx = with(density) { 30.dp.toPx() }
     val deepPullPx = with(density) { 200.dp.toPx() }
@@ -585,6 +622,37 @@ fun HomeScreen(
             .fillMaxSize()
             .onSizeChanged { viewportHeight = it.height }
             .onGloballyPositioned { rootY = it.positionInWindow().y }
+            // A swipe right across the home screen's empty space opens the page on the left.
+            //
+            // "Empty space" means anywhere the widget is not and no row is, rather than one
+            // measured band: a band is only as big as the padding between the two, and
+            // tightening that padding would take the gesture away rather than narrow it.
+            //
+            // Horizontal only, so it cannot be confused with the vertical pull that peeks the
+            // shade or the swipe up that opens the app list. A drag that starts on the widget or
+            // on a row is not ours - a row has a horizontal swipe of its own for app shortcuts,
+            // and taking that would trade a gesture that works for one that does not.
+            //
+            // Measured on absolute positions rather than positionChange(), which reports zero
+            // for a consumed change and so would always read the travel as 0.
+            .pointerInput(minusOneEnabled, favBounds, widgetBounds) {
+                if (!minusOneEnabled) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startedOnEmptySpace = !isOnContent(rootY + down.position.y)
+                    val startX = down.position.x
+                    var furthestX = startX
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        furthestX = maxOf(furthestX, change.position.x)
+                    }
+                    // Furthest rather than final: a finger that travels right and comes back
+                    // before lifting has still been to the right, and that is what it meant.
+                    if (startedOnEmptySpace && furthestX - startX > openThreshold) onOpenMinusOne()
+                }
+            }
             .draggable(
                 orientation = Orientation.Vertical,
                 enabled = !editMode && liveSlot == null,

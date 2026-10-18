@@ -121,7 +121,12 @@ import dev.victorialauncher.R
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.victorialauncher.ui.theme.SHADOW_STRENGTH_RANGE
+import dev.victorialauncher.ui.theme.GlowAccent
+import dev.victorialauncher.ui.theme.GlowAccent
+import dev.victorialauncher.ui.theme.GlowingSegment
+import dev.victorialauncher.ui.theme.GlowingSegmentTrack
 import dev.victorialauncher.ui.theme.GlowingSlider
+import androidx.compose.ui.text.style.TextAlign
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -280,6 +285,12 @@ fun SettingsScreen(
     frequentExcludedVisible: Boolean,
     onOpenFrequentExcluded: () -> Unit,
     onOpenFavorites: () -> Unit,
+    minusOneMode: MinusOneMode,
+    /**
+     * Turning the page off drops whatever was on it: setting it up again should be a deliberate
+     * act, not a page that quietly reappeared with a stack nobody was told had been kept.
+     */
+    onSetMinusOneMode: (MinusOneMode) -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -433,6 +444,9 @@ fun SettingsScreen(
         ) { DimColorRow(dimColor, onSetDimColor) },
 
         // ---- Home screen ----
+        SettingsEntry(SettingsSection.HOME, stringResource(R.string.minus_one_title), "left page") {
+            MinusOneModeRow(minusOneMode, onSetMinusOneMode)
+        },
         SettingsEntry(SettingsSection.HOME, stringResource(R.string.settings_favorites_source), "frequent most used manual") {
             FavoritesSourceRow(favoritesSource, frequentCount, onSetFavoritesSource, onSetFrequentCount)
         },
@@ -1506,6 +1520,48 @@ private fun TextColorRow(
  * Named rather than inlined so the About screen, the README and the F-Droid description cannot
  * quietly disagree about who wrote the original.
  */
+
+@Composable
+private fun MinusOneModeRow(selected: MinusOneMode, onSelect: (MinusOneMode) -> Unit) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(stringResource(R.string.minus_one_title), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            stringResource(R.string.minus_one_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+        // The same lit segmented control as every other choice in the app, so a choice here
+        // looks like a choice everywhere else.
+        GlowingSegmentTrack(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            MinusOneMode.entries.forEach { mode ->
+                GlowingSegment(
+                    selected = selected == mode,
+                    onClick = { onSelect(mode) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        stringResource(mode.labelRes()),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected == mode) {
+                            GlowAccent
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        },
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun MinusOneMode.labelRes(): Int = when (this) {
+    MinusOneMode.OFF -> R.string.minus_one_mode_off
+    MinusOneMode.DISCOVER -> R.string.minus_one_mode_discover
+    MinusOneMode.WIDGETS -> R.string.minus_one_mode_widgets
+}
 private const val UPSTREAM_URL = "github.com/adelmonte/victoria-launcher"
 private const val UPSTREAM_AUTHOR = "adelmonte"
 private const val UPSTREAM_AUTHOR_URL = "github.com/adelmonte"

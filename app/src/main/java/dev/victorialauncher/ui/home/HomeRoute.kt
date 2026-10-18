@@ -79,6 +79,12 @@ import dev.victorialauncher.data.QuickLaunchSlot
 import dev.victorialauncher.data.PaddingSlot
 import kotlinx.coroutines.flow.first
 import dev.victorialauncher.data.folderToken
+import dev.victorialauncher.data.MinusOneEntry
+import dev.victorialauncher.data.MinusOneMode
+// Aliased because the page's composable in this same package has the same name as the value
+// type it draws. One is what the user sees, the other is what is stored.
+import dev.victorialauncher.data.MinusOnePage as MinusOnePageData
+import dev.victorialauncher.data.withSize
 
 import dev.victorialauncher.media.NotificationBus
 import dev.victorialauncher.media.NotificationActionEntry
@@ -196,6 +202,8 @@ fun HomeRoute(
     /** Locks an open private space or asks for a locked one to be opened, off this thread. */
     onTogglePrivateSpace: () -> Unit,
     onNavigate: (String) -> Unit,
+    /** Opens the picker with the result marked as belonging to the page on the left. */
+    onAddWidgetToMinusOne: () -> Unit,
 ) {
     val context = LocalContext.current
     // Read here because the models are built off the main thread, where a string resource
@@ -295,6 +303,26 @@ fun HomeRoute(
     // Which app's panel the swipe opened, or null. Held by the destination because the strip
     // and the edge zones are drawn here, after HomeScreen, and would cover a panel drawn there.
     var panelFor by remember { mutableStateOf<Triple<AppInfo, Dp, Dp>?>(null) }
+
+    val minusOne by app.prefs.minusOne.collectAsState(initial = MinusOnePageData())
+    var minusOneVisible by remember { mutableStateOf(false) }
+
+    /**
+     * Which entry on the page is being arranged.
+     *
+     * Held by the route rather than by the page, so BACK can be aimed at it. Left inside, the
+     * page's own BACK handler closed the page and the arrangement with it in one press - and
+     * since closing the page lands on the home screen, and the launcher is the home screen,
+     * that reads as a BACK that did nothing.
+     */
+    var minusOneEditing by remember { mutableStateOf<Int?>(null) }
+
+    /**
+     * True while a size handle is being dragged. A resize from the right edge is a horizontal
+     * drag, and without this the page's own swipe-to-dismiss reads it as a sideways fling and
+     * closes the page halfway through the resize.
+     */
+    var minusOneArranging by remember { mutableStateOf(false) }
 
     // True while a handle on the page is being dragged. A handle drag is a horizontal drag on
     // the page, and without this the page's own swipe-to-dismiss reads it as a sideways fling
@@ -926,6 +954,14 @@ fun HomeRoute(
                 },
                 contentColor = settings.contentColor,
                 showFavoriteLabels = settings.showFavoriteLabels,
+                minusOneEnabled = minusOne.mode != MinusOneMode.OFF,
+                onOpenMinusOne = {
+                    minusOneVisible = true
+                    // Discover has nothing of its own to draw - it is the Google app, not a feed
+                    // of ours - so reaching the page is the whole gesture and the app opens with
+                    // it. A button first made it a dead end with a prompt.
+                    if (minusOne.mode == MinusOneMode.DISCOVER) openGoogleApp(context)
+                },
                 alignment = settings.alignment,
                 iconSide = settings.iconSide,
                 editMode = homeEditMode,
@@ -1144,6 +1180,106 @@ fun HomeRoute(
             )
         }
 
+        // The page on the left.
+        //
+        // Composed only while it is open. An always-composed full-screen overlay - even one
+        // faded to nothing - takes every touch on the home screen underneath it: the swipe that
+        // was supposed to reach the home screen's own gesture handler instead started here.
+        // That is the same reason the shade above is drawn only while it is open.
+        //
+        // Swipe-to-dismiss. A decisive drag either way closes it, because there is nothing else
+        // on the page for a sideways drag to mean: its content is one line, and the entries in it
+        // answer to a long press rather than a drag.
+        //
+        // Keyed on minusOneArranging so that lifting a handle mid-drag cancels the gesture that
+        // was already in flight - otherwise the drag that began on a resize handle still ended as
+        // a sideways fling and closed the page.
+        if (minusOneVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(minusOneArranging) {
+                        if (minusOneArranging) return@pointerInput
+                        val threshold = with(density) { 72.dp.toPx() }
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var travelled = 0f
+                            var dismissed = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                travelled = change.position.x - down.position.x
+                                // Consumed only once this is a drag that actually closes the page.
+                                // Consuming every move instead took the touch stream from everything
+                                // under it - a widget on the page could not scroll, and a drag to
+                                // move an entry was swallowed before it reached the entry.
+                                if (kotlin.math.abs(travelled) > threshold) {
+                                    change.consume()
+                                    dismissed = true
+                                    break
+                                }
+                            }
+                            if (dismissed) {
+                                minusOneEditing = null
+                                minusOneVisible = false
+                            }
+                        }
+                    },
+            ) {
+                fun updateEntries(transform: (List<MinusOneEntry>) -> List<MinusOneEntry>) {
+                    // Read inside the coroutine rather than from the snapshot this composition
+                    // was built with. A drag writes several times in a few hundred milliseconds -
+                    // a reorder for every neighbour the finger passes - and each was applied to
+                    // the list as it was when the page opened, so they overwrote one another and
+                    // the drag stored no change at all.
+                    scope.launch {
+                        val current = app.prefs.minusOne.first()
+                        app.prefs.setMinusOne(current.mode, transform(current.entries))
+                    }
+                }
+
+                MinusOnePage(
+                    page = minusOne,
+                    appsByKey = appsByKey,
+                    contentColor = settings.contentColor,
+                    onAddWidget = onAddWidgetToMinusOne,
+                    onResize = { index, widthDp, heightDp ->
+                        updateEntries { entries ->
+                            val entry = entries.getOrNull(index) ?: return@updateEntries entries
+                            entries.toMutableList().apply { set(index, entry.withSize(widthDp, heightDp)) }
+                        }
+                    },
+                    onRemove = { index ->
+                        val entry = minusOne.entries.getOrNull(index) ?: return@MinusOnePage
+                        // The host id has to be released, not just forgotten: left allocated, the
+                        // provider keeps broadcasting updates to a widget nobody can see.
+                        if (entry is MinusOneEntry.Widget && entry.widgetId > 0) {
+                            runCatching { app.widgetHost.deleteAppWidgetId(entry.widgetId) }
+                        }
+                        updateEntries { entries -> entries.filterIndexed { i, _ -> i != index } }
+                    },
+                    onMove = { from, to -> updateEntries { WidgetReorder.move(it, from, to) } },
+                    onLaunch = { launchEntry(it) },
+                    onOpenSettings = { onNavigate("settings") },
+                    editingIndex = minusOneEditing,
+                    onEditingChange = { minusOneEditing = it },
+                    onResizeActiveChange = { minusOneArranging = it },
+                )
+            }
+        }
+
+        // BACK leaves the page rather than the launcher, so BACK - which the user has just been
+        // pressing to get out of everything else on this screen - does not close the app.
+        BackHandler(enabled = minusOneVisible) { minusOneVisible = false }
+
+        // Registered after the one above, so while something is being arranged this is the BACK
+        // that runs: one press ends the arrangement and leaves the page where it is. Only the
+        // arrangement ends, because a press that also left the page would be the same press
+        // doing two things, and on a launcher that reads as BACK being broken.
+        BackHandler(enabled = minusOneVisible && minusOneEditing != null) {
+            minusOneEditing = null
+        }
 
         // Above everything else, and last, so a pull that opens it cannot be mistaken for a
         // pull that opened the list underneath. Only drawn while open: keeping a full-screen
@@ -1347,6 +1483,9 @@ fun HomeRoute(
     }
 }
 
+
+private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
+
 /**
  * The Google app, by package first and by its search action second. False when neither exists.
  *
@@ -1369,8 +1508,6 @@ private fun openGoogleApp(context: android.content.Context): Boolean {
 
 private const val GOOGLE_SEARCH_PACKAGE = "com.google.android.googlequicksearchbox"
 private const val GOOGLE_SEARCH_ACTION = "com.google.android.gsf.search.action.GOOGLE_SEARCH"
-
-private fun iconPickerRoute(key: String) = "iconpicker/" + Uri.encode(key)
 
 /** Display and behavior settings the home destination reads, grouped so they travel as one. */
 @Immutable
@@ -1430,6 +1567,7 @@ data class HomeSettings(
     val doubleTapToLock: Boolean,
     val contentColor: Color,
 )
+
 
 /** How long a private space unlock has to put the system's lock screen up before giving up. */
 private const val PRIVATE_UNLOCK_PROMPT_MS = 1500L
